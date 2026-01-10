@@ -1,4 +1,4 @@
-import { formatTime, id } from "@/utils/utils";
+import { formatTime, id, ub64 } from "@/utils/utils";
 import type { Attachment, Message as MessageType, Reaction } from "@/core/types";
 import defaultAvatar from "@/images/default-avatar.png";
 import Quote from "@/core/components/Quote";
@@ -6,11 +6,10 @@ import { parse } from "marked";
 import { escape as escapeHtml } from "he";
 import { useEffect, useState, useRef, useMemo } from "react";
 import api from "@/core/api";
-import { ecdhSharedSecret, deriveWrappingKey, importAesGcmKey, aesGcmDecrypt } from "@fromchat/protocol";
+import { importAesGcmKey, aesGcmDecrypt } from "@fromchat/protocol";
 import { useUserStore } from "@/state/user";
 import { useProfileStore } from "@/state/profile";
 import { StatusBadge } from "@/core/components/StatusBadge";
-import { ub64 } from "@/utils/utils";
 import { useImmer } from "use-immer";
 import { createPortal } from "react-dom";
 import { parseProfileLink } from "@/core/profileLinks";
@@ -139,7 +138,6 @@ interface MessageProps {
     onContextMenu: (e: React.MouseEvent, message: MessageType) => void;
     onReactionClick?: (messageId: number, emoji: string) => void;
     isDm?: boolean;
-    dmRecipientPublicKey?: string;
 }
 
 interface Rect {
@@ -149,7 +147,7 @@ interface Rect {
     height: number
 }
 
-export function Message({ message, isAuthor, onContextMenu, onReactionClick, isDm = false, dmRecipientPublicKey }: MessageProps) {
+export function Message({ message, isAuthor, onContextMenu, onReactionClick, isDm = false }: MessageProps) {
     const [decryptedFiles, updateDecryptedFiles] = useImmer<Map<string, string>>(new Map());
     const [loadedImages, updateLoadedImages] = useImmer<Set<string>>(new Set());
     const [downloadingPaths, updateDownloadingPaths] = useImmer<Set<string>>(new Set());
@@ -198,7 +196,9 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
         if (isDm && message.files) {
             message.files.forEach(async (file) => {
                 const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(file.name || "");
-                if (isImage && file.encrypted && !decryptedFiles.has(file.path)) {
+                const looksEncryptedPath = /\/uploads\/files\/encrypted\//.test(file.path) || /\/api\/uploads\/files\/encrypted\//.test(file.path);
+                const shouldDecrypt = Boolean(file.encrypted || looksEncryptedPath);
+                if (isImage && shouldDecrypt && !decryptedFiles.has(file.path)) {
                     const decryptedUrl = await decryptFile(file);
                     if (decryptedUrl) {
                         updateDecryptedFiles(draft => {
@@ -211,7 +211,14 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
     }, [message.files, isDm, decryptedFiles]);
 
     async function decryptFile(file: Attachment): Promise<string | null> {
-        if (!file.encrypted || !isDm || !user.authToken || !dmRecipientPublicKey || !dmEnvelope) return null;
+        if (!isDm || !user.authToken || !dmEnvelope) return null;
+
+        const userKeys = api.user.auth.getCurrentKeys();
+        if (!userKeys) return null;
+
+        const looksEncryptedPath = /\/uploads\/files\/encrypted\//.test(file.path) || /\/api\/uploads\/files\/encrypted\//.test(file.path);
+        const shouldDecrypt = Boolean(file.encrypted || looksEncryptedPath);
+        if (!shouldDecrypt) return null;
 
         // Check if already decrypted
         if (decryptedFiles.has(file.path)) {
@@ -232,23 +239,44 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
             const keys = api.user.auth.getCurrentKeys();
             if (!keys) throw new Error("Keys not initialized");
 
-            // Derive shared secret with the recipient's public key
-            const shared = await ecdhSharedSecret(keys.privateKey, ub64(dmRecipientPublicKey));
+            // Decrypt file using the envelope encryption MEK unwrapping logic
+            // Use the same logic as message decryption
+            // Prefer file-specific wrapped MEK (attachments have their own wrapped MEK)
 
-            // Derive wrapping key using the salt from the DM envelope
-            const wkRaw = await deriveWrappingKey(shared, ub64(dmEnvelope.salt), new Uint8Array([1]));
-            const wk = await importAesGcmKey(wkRaw);
+            // Get MEK from envelope file data - server provides user-specific MEK
+            const envelopeFile = dmEnvelope.files?.find(f => f.path === file.path);
+            const fileWrapped = file.wrapped_mek_b64;
+            const envelopeWrapped = envelopeFile?.wrapped_mek_b64;
+            const dmWrapped = dmEnvelope.wrapped_mek_b64;
 
-            // Unwrap the message key
-            const mk = await aesGcmDecrypt(wk, ub64(dmEnvelope.iv2), ub64(dmEnvelope.wrappedMk));
+            const wrappedMekB64 = fileWrapped || envelopeWrapped || dmWrapped;
 
-            // Decrypt the file using the message key
-            const iv = new Uint8Array(encryptedData, 0, 12);
-            const ciphertext = new Uint8Array(encryptedData, 12);
+            if (!wrappedMekB64) {
+                console.error("No MEK available for file decryption:", file.path);
+                return null;
+            }
+
+            // Unwrap the MEK using the same logic as message decryption
+            const mk = await api.chats.dm.unwrapMek(wrappedMekB64, dmEnvelope, user.currentUser?.id);
+
+            // Decrypt the file using the unwrapped MEK
+            const nonceB64 = file.nonce_b64 || envelopeFile?.nonce_b64;
+            if (!nonceB64) throw new Error("No nonce available for file decryption");
+
+            const iv = ub64(nonceB64);
+            const ciphertext = new Uint8Array(encryptedData);
             const decrypted = await aesGcmDecrypt(await importAesGcmKey(mk), iv, ciphertext);
 
             // Create blob URL for download
-            const blob = new Blob([decrypted.buffer as ArrayBuffer]);
+            const ext = (file.name || "").toLowerCase().split(".").pop();
+            const mime =
+                ext === "png" ? "image/png" :
+                ext === "jpg" || ext === "jpeg" ? "image/jpeg" :
+                ext === "gif" ? "image/gif" :
+                ext === "webp" ? "image/webp" :
+                "application/octet-stream";
+            const decryptedBuf = (decrypted.buffer as ArrayBuffer).slice(decrypted.byteOffset, decrypted.byteOffset + decrypted.byteLength);
+            const blob = new Blob([decryptedBuf], { type: mime });
             const url = URL.createObjectURL(blob);
 
             updateDecryptedFiles(draft => {
@@ -268,7 +296,7 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
         const decryptedUrl = decryptedFiles.get(file.path);
         if (decryptedUrl) {
             openFullscreenFromThumb(imageElement, decryptedUrl, file.name || "image");
-        } else if (file.encrypted && isDm) {
+        } else if (isDm && (file.encrypted || /\/uploads\/files\/encrypted\//.test(file.path) || /\/api\/uploads\/files\/encrypted\//.test(file.path))) {
             const newDecryptedUrl = await decryptFile(file);
             if (newDecryptedUrl) {
                 openFullscreenFromThumb(imageElement, newDecryptedUrl, file.name || "image");
@@ -376,6 +404,22 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
                     draft.delete(file.path);
                 });
                 return;
+            }
+
+            // If this is an encrypted DM attachment, decrypt before downloading
+            const looksEncryptedPath = /\/uploads\/files\/encrypted\//.test(file.path) || /\/api\/uploads\/files\/encrypted\//.test(file.path);
+            if (isDm && (file.encrypted || looksEncryptedPath)) {
+                const decryptedUrl = await decryptFile(file);
+                if (decryptedUrl) {
+                    const link = document.createElement("a");
+                    link.href = decryptedUrl;
+                    link.download = file.name || "file";
+                    link.click();
+                    updateDownloadingPaths(draft => {
+                        draft.delete(file.path);
+                    });
+                    return;
+                }
             }
 
             // If not decrypted or public file, fetch with credentials/headers
@@ -513,16 +557,19 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
                         </Quote>
                     )}
 
-                    <div
-                        className={`${styles.messageContent} ${isEmojiMessage ? styles.emojiContent : ""} ${isSingleEmojiMessage ? styles.singleEmojiContent : ""}`}
-                        dangerouslySetInnerHTML={formattedMessage}
-                        onClick={handleLinkClick} />
+                    {messageText.length > 0 && (
+                        <div
+                            className={`${styles.messageContent} ${isEmojiMessage ? styles.emojiContent : ""} ${isSingleEmojiMessage ? styles.singleEmojiContent : ""}`}
+                            dangerouslySetInnerHTML={formattedMessage}
+                            onClick={handleLinkClick} />
+                    )}
 
                     {message.files && message.files.length > 0 && (
                         <MaterialList className={styles.messageAttachments}>
                             {message.files.map((file, idx) => {
                                 const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(file.name || "");
-                                const isEncryptedDm = Boolean(isDm && file.encrypted);
+                                const looksEncryptedPath = /\/uploads\/files\/encrypted\//.test(file.path) || /\/api\/uploads\/files\/encrypted\//.test(file.path);
+                                const isEncryptedDm = Boolean(isDm && (file.encrypted || looksEncryptedPath));
                                 const decryptedUrl = decryptedFiles.get(file.path);
                                 const imageSrc = isImage ? (isEncryptedDm ? decryptedUrl : file.path) : undefined;
                                 const isDownloading = downloadingPaths.has(file.path);
@@ -532,17 +579,19 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
                                     <div className={styles.attachment} key={idx}>
                                         {isImage ? (
                                             <div className={styles.imageWrapper}>
-                                                <img
-                                                    ref={(el) => {
-                                                        if (el) imageRefs.current.set(file.path, el);
-                                                    }}
-                                                    src={imageSrc}
-                                                    alt={file.name || "image"}
-                                                    onClick={(e) => handleImageClick(file, e.currentTarget)}
-                                                    onLoad={() => updateLoadedImages(draft => { draft.add(file.path); })}
-                                                    className={`${styles.attachementImage} ${loadedImages.has(file.path) ? "" : styles.loading}`}
-                                                />
-                                                {(!loadedImages.has(file.path) || isSending) && (
+                                                {isEncryptedDm && !decryptedUrl ? null : (
+                                                    <img
+                                                        ref={(el) => {
+                                                            if (el) imageRefs.current.set(file.path, el);
+                                                        }}
+                                                        src={imageSrc}
+                                                        alt={file.name || "image"}
+                                                        onClick={(e) => handleImageClick(file, e.currentTarget)}
+                                                        onLoad={() => updateLoadedImages(draft => { draft.add(file.path); })}
+                                                        className={`${styles.attachementImage} ${loadedImages.has(file.path) ? "" : styles.loading}`}
+                                                    />
+                                                )}
+                                                {((isEncryptedDm && !decryptedUrl) || !loadedImages.has(file.path) || isSending) && (
                                                     <div className={styles.loadingOverlay}>
                                                         <MaterialCircularProgress />
                                                     </div>

@@ -25,7 +25,7 @@
         "build:electron": "npm run frontend:electron:build",
         "build": "npm run frontend:build && npm run build:electron",
         "preview": "cd deployment && docker compose up --build --watch",
-        "preview:clean": "cd deployment && docker compose down -v",
+        "preview:clean": "cd deployment && docker compose down -v --remove-orphans",
         "clean": "npm run backend:clean && npm run frontend:clean && npm run preview:clean",
         "install": "npm run backend:dependencies && if [[ ! -f deployment/.env ]]; then npm run generate:env; fi && npm run install:pussh",
         "install:pussh": "bash ./scripts/install:pussh.sh",

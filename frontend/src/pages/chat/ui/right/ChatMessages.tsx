@@ -16,10 +16,9 @@ interface ChatMessagesProps {
     onEditSelect?: (message: MessageType) => void;
     onDelete?: (id: number) => void;
     onRetryMessage?: (messageId: number) => void;
-    dmRecipientPublicKey?: string;
 }
 
-export function ChatMessages({ messages = [], children, isDm = false, onReplySelect, onEditSelect, onDelete, onRetryMessage, dmRecipientPublicKey }: ChatMessagesProps) {
+export function ChatMessages({ messages = [], children, isDm = false, onReplySelect, onEditSelect, onDelete, onRetryMessage }: ChatMessagesProps) {
     const { user } = useUserStore();
 
     // Context menu state
@@ -122,8 +121,7 @@ export function ChatMessages({ messages = [], children, isDm = false, onReplySel
                         }
                         onContextMenu={handleContextMenu}
                         onReactionClick={handleReactionClick}
-                        isDm={isDm}
-                        dmRecipientPublicKey={dmRecipientPublicKey} />
+                        isDm={isDm} />
                 ))}
                 {children}
             </div>

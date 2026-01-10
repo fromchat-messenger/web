@@ -183,11 +183,9 @@ export interface UploadPublicKeyRequest {
 
 export interface SendDMRequest {
     recipientId: number;
-    iv: string;
-    ciphertext: string;
-    salt: string;
-    iv2: string;
-    wrappedMk: string;
+    iv_b64: string;
+    ciphertext_b64: string;
+    wrapped_mek_b64: string;
     replyToId?: number;
 }
 
@@ -209,11 +207,9 @@ export interface BackupBlob {
 }
 
 export interface BaseDmEnvelope {
-    iv: string;
-    ciphertext: string;
-    salt: string;
-    iv2: string;
-    wrappedMk: string;
+    iv_b64: string;
+    ciphertext_b64: string;
+    wrapped_mek_b64: string;
     recipientId: number;
 }
 
@@ -223,12 +219,16 @@ export interface DmEnvelope extends BaseDmEnvelope {
     files?: DmFile[];
     timestamp: string;
     reactions?: Reaction[];
+    replyToId?: number;
 }
 
 export interface DmFile {
     name: string;
     id: number;
     path: string;
+    dm_envelope_id?: number;
+    wrapped_mek_b64?: string;
+    nonce_b64?: string;
 }
 
 export interface DmEditedPayload {
@@ -306,6 +306,8 @@ export interface Attachment {
     path: string;
     encrypted: boolean;
     name: string;
+    wrapped_mek_b64?: string;
+    nonce_b64?: string;
 }
 
 // -----------------------

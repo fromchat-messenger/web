@@ -88,7 +88,7 @@ export class PublicChatPanel extends MessagePanel {
     }
 
     protected async sendMessage(content: string, replyToId?: number, files: File[] = []): Promise<void> {
-        if (!this.currentUser.authToken || !content.trim()) return;
+        if (!this.currentUser.authToken || (!content.trim() && files.length === 0)) return;
 
         if (files.length === 0) {
             await api.chats.general.send(content, replyToId ?? null, this.currentUser.authToken);

@@ -6,6 +6,7 @@ echo > deployment/.env
 
 cat >> deployment/.env <<EOF
 JWT_SECRET="$(openssl rand -base64 32)"
+COMPLIANCE_PUBLIC_KEY="$(./.venv/bin/python3 scripts/generate_compliance_keypair.py --save --public-only)"
 TURN_USERNAME=<set>
 TURN_SECRET=<set>
 DEPLOYMENT_SERVER=<set>

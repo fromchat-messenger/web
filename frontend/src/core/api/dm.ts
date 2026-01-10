@@ -1,26 +1,18 @@
 import { API_BASE_URL } from "@/core/config";
 import { getAuthHeaders } from "./account";
-import { ecdhSharedSecret, deriveWrappingKey, importAesGcmKey, aesGcmEncrypt, aesGcmDecrypt, randomBytes } from "@fromchat/protocol";
-import { getCurrentKeys } from "./account";
 import { request } from "@/core/websocket";
-import type { SendDMRequest, DmEnvelope, DMEditRequest, DmEncryptedJSON, BaseDmEnvelope, User } from "@/core/types";
-import { b64, ub64 } from "@/utils/utils";
+import type { DmEnvelope, User } from "@/core/types";
 import { fetchUserPublicKey } from "./crypto";
 import { fetchUsers, searchUsers } from "./users";
 
-export async function decryptDm(envelope: DmEnvelope, senderPublicKeyB64: string): Promise<string> {
-    const keys = getCurrentKeys();
-    if (!keys) throw new Error("Keys not initialized");
-
-    // Obtain the key
-    const shared = ecdhSharedSecret(keys.privateKey, ub64(senderPublicKeyB64));
-    const wkRaw = await deriveWrappingKey(shared, ub64(envelope.salt), new Uint8Array([1]));
-    const wk = await importAesGcmKey(wkRaw);
-    const mk = await aesGcmDecrypt(wk, ub64(envelope.iv2), ub64(envelope.wrappedMk));
-
-    // Decrypt
-    const msg = await aesGcmDecrypt(await importAesGcmKey(mk), ub64(envelope.iv), ub64(envelope.ciphertext));
-    return new TextDecoder().decode(msg);
+/**
+ * Decrypt a DM envelope using client-side MEK unwrapping.
+ * This delegates to the chats/dm module which has the updated implementation.
+ */
+export async function decryptDm(envelope: DmEnvelope): Promise<string> {
+    // Import and use the updated implementation from chats/dm
+    const { decrypt } = await import("./chats/dm");
+    return decrypt(envelope);
 }
 
 export async function fetchDMHistory(userId: number, token: string, limit: number = 50): Promise<DmEnvelope[]> {
@@ -35,121 +27,16 @@ export async function fetchDMHistory(userId: number, token: string, limit: numbe
 // Re-export user functions for convenience
 export { fetchUsers, searchUsers, fetchUserPublicKey };
 
+/**
+ * Send DM via WebSocket using transport encryption.
+ * This delegates to the HTTP endpoint which handles envelope encryption on server.
+ */
 export async function sendDMViaWebSocket(recipientId: number, recipientPublicKeyB64: string, plaintext: string, authToken: string, replyToId?: number): Promise<void> {
-    const keys = getCurrentKeys();
-    if (!keys) throw new Error("Keys not initialized");
-
-    // Encryption key
-    const mk = randomBytes(32);
-    const wkSalt = randomBytes(16);
-    const shared = ecdhSharedSecret(keys.privateKey, ub64(recipientPublicKeyB64));
-    const wkRaw = await deriveWrappingKey(shared, wkSalt, new Uint8Array([1]));
-    const wk = await importAesGcmKey(wkRaw);
-
-    // Encrypt the message
-    const encMsg = await aesGcmEncrypt(await importAesGcmKey(mk), new TextEncoder().encode(plaintext));
-    const wrap = await aesGcmEncrypt(wk, mk);
-
-    const payload: SendDMRequest = {
-        recipientId: recipientId,
-        iv: b64(encMsg.iv),
-        ciphertext: b64(encMsg.ciphertext),
-        salt: b64(wkSalt),
-        iv2: b64(wrap.iv),
-        wrappedMk: b64(wrap.ciphertext)
-    };
-    if (replyToId) payload.replyToId = replyToId;
-
-    await request({
-        type: "dmSend",
-        credentials: {
-            scheme: "Bearer",
-            credentials: authToken
-        },
-        data: payload
-    });
+    // Import and use the updated implementation from chats/dm
+    const { send } = await import("./chats/dm");
+    return send(recipientId, recipientPublicKeyB64, plaintext, authToken, replyToId);
 }
 
-export async function sendDmWithFiles(recipientId: number, recipientPublicKeyB64: string, plaintextJson: string, files: File[], token: string): Promise<void> {
-    const keys = getCurrentKeys();
-    if (!keys) throw new Error("Keys not initialized");
-
-    const mk = randomBytes(32);
-    const wkSalt = randomBytes(16);
-    const shared = await ecdhSharedSecret(keys.privateKey, ub64(recipientPublicKeyB64));
-    const wkRaw = await deriveWrappingKey(shared, wkSalt, new Uint8Array([1]));
-    const wk = await importAesGcmKey(wkRaw);
-
-    const wrap = await aesGcmEncrypt(wk, mk);
-
-    const form = new FormData();
-    const names: string[] = [];
-    function sliceBuffer(u8: Uint8Array): ArrayBuffer {
-        return (u8.buffer as ArrayBuffer).slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-    }
-
-    for (const f of files) {
-        // Encrypt file with same mk
-        const data = new Uint8Array(await f.arrayBuffer());
-        const enc = await aesGcmEncrypt(await importAesGcmKey(mk), data);
-        const blob = new Blob([sliceBuffer(enc.iv), sliceBuffer(enc.ciphertext)], { type: "application/octet-stream" });
-        const serverName = f.name; // server uses provided name
-        names.push(serverName);
-        form.append("files", new File([blob], serverName));
-    }
-    form.append("fileNames", JSON.stringify(names));
-
-    // Merge files metadata into plaintext JSON and encrypt
-    let obj: DmEncryptedJSON;
-    try {
-        obj = JSON.parse(plaintextJson);
-    } catch {
-        obj = { type: "text", data: { content: String(plaintextJson) } };
-    }
-
-    const encMsg = await aesGcmEncrypt(await importAesGcmKey(mk), new TextEncoder().encode(JSON.stringify(obj)));
-    form.append("dm_payload", JSON.stringify({
-        recipientId: recipientId,
-        iv: b64(encMsg.iv),
-        ciphertext: b64(encMsg.ciphertext),
-        salt: b64(wkSalt),
-        iv2: b64(wrap.iv),
-        wrappedMk: b64(wrap.ciphertext)
-    } satisfies BaseDmEnvelope));
-
-    await fetch(`${API_BASE_URL}/dm/send`, {
-        method: "POST",
-        headers: getAuthHeaders(token, false),
-        body: form
-    });
-}
-
-export async function editDmEnvelope(id: number, recipientPublicKeyB64: string, newPlaintextJson: string, authToken: string): Promise<void> {
-    const keys = getCurrentKeys();
-    if (!keys) throw new Error("Keys not initialized");
-
-    // We cannot reuse the old mk safely without knowing it; generate a fresh mk and wrap
-    const mk = randomBytes(32);
-    const wkSalt = randomBytes(16);
-    const shared = await ecdhSharedSecret(keys.privateKey, ub64(recipientPublicKeyB64));
-    const wkRaw = await deriveWrappingKey(shared, wkSalt, new Uint8Array([1]));
-    const wk = await importAesGcmKey(wkRaw);
-    const encMsg = await aesGcmEncrypt(await importAesGcmKey(mk), new TextEncoder().encode(newPlaintextJson));
-    const wrap = await aesGcmEncrypt(wk, mk);
-
-    await request({
-        type: "dmEdit",
-        credentials: { scheme: "Bearer", credentials: authToken },
-        data: {
-            id,
-            iv: b64(encMsg.iv),
-            ciphertext: b64(encMsg.ciphertext),
-            iv2: b64(wrap.iv),
-            wrappedMk: b64(wrap.ciphertext),
-            salt: b64(wkSalt)
-        }
-    } as DMEditRequest);
-}
 
 export async function deleteDmEnvelope(id: number, recipientId: number, authToken: string): Promise<void> {
     await request({
@@ -174,3 +61,177 @@ export async function fetchDMConversations(token: string): Promise<DMConversatio
     return data.conversations || [];
 }
 
+// ============================================================================
+// Envelope Encryption (Private DMs with compliance support)
+// ============================================================================
+
+interface TransportKey {
+    key_id: string;
+    public_key_b64: string;
+    created_at: number;
+}
+
+interface TransportEncryptedMessage {
+    client_public_key_b64: string;
+    nonce_b64: string;
+    ciphertext_b64: string;
+}
+
+let cachedTransportKey: TransportKey | null = null;
+
+/**
+ * Fetch current transport public key from messaging service.
+ * Caches result with validation.
+ */
+export async function getTransportPublicKey(): Promise<TransportKey> {
+    if (cachedTransportKey) {
+        return cachedTransportKey;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/dm/key/transport/public`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data: TransportKey = await response.json();
+        cachedTransportKey = data;
+        return data;
+    } catch (error) {
+        console.error("Failed to fetch transport public key:", error);
+    }
+
+    throw new Error("Failed to fetch transport public key");
+}
+
+/**
+ * Encrypt a message using the transport public key (X25519 + ChaCha20).
+ */
+function encryptMessageWithTransportKey(
+    plaintext: string | Uint8Array,
+    transportPublicKeyB64: string
+): { nonce_b64: string; ciphertext_b64: string; client_public_key_b64: string } {
+    const tweetnacl = require("tweetnacl");
+
+    // Convert plaintext to bytes if string
+    const plaintextBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
+
+    // Generate ephemeral keypair for this message
+    const ephemeralKeypair = tweetnacl.box.keyPair();
+
+    // Decode transport public key
+    const transportPublicKeyBytes = new Uint8Array(
+        atob(transportPublicKeyB64)
+            .split("")
+            .map((c: string) => c.charCodeAt(0))
+    );
+
+    // Perform ECDH (shared secret via tweetnacl's box)
+    const nonce = tweetnacl.randomBytes(24);
+    const ciphertext = tweetnacl.box(plaintextBytes, nonce, transportPublicKeyBytes, ephemeralKeypair.secretKey);
+
+    // Encode to base64
+    const nonce_b64 = btoa(String.fromCharCode.apply(null, Array.from(nonce) as number[]));
+    const ciphertext_b64 = btoa(String.fromCharCode.apply(null, Array.from(ciphertext) as number[]));
+    const client_public_key_b64 = btoa(
+        String.fromCharCode.apply(null, Array.from(ephemeralKeypair.publicKey) as number[])
+    );
+
+    return { nonce_b64, ciphertext_b64, client_public_key_b64 };
+}
+
+/**
+ * Encrypt plaintext with transport public key for sending to server.
+ * Server will handle envelope encryption (MEK generation and wrapping).
+ */
+export async function encryptMessageForTransport(plaintext: string): Promise<TransportEncryptedMessage> {
+    const transportKey = await getTransportPublicKey();
+    return encryptMessageWithTransportKey(plaintext, transportKey.public_key_b64);
+}
+
+/**
+ * Send an encrypted DM message using envelope encryption.
+ * Client encrypts with transport key, server handles envelope encryption.
+ */
+export async function sendEncryptedDM(
+    recipientId: number,
+    plaintext: string,
+    token: string,
+    replyToId?: number
+): Promise<void> {
+    try {
+        // Client-side transport encryption
+        const { client_public_key_b64, nonce_b64, ciphertext_b64 } =
+            await encryptMessageForTransport(plaintext);
+
+        // Send to server
+        const response = await fetch(`${API_BASE_URL}/api/dm/send`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...getAuthHeaders(token, true)
+            },
+            body: JSON.stringify({
+                recipient_id: recipientId,
+                client_public_key_b64,
+                transport_nonce_b64: nonce_b64,
+                transport_ciphertext_b64: ciphertext_b64,
+                reply_to_id: replyToId,
+            }),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch (error) {
+        console.error("Failed to send encrypted DM:", error);
+        throw error;
+    }
+}
+
+/**
+ * Get encrypted conversation history with another user.
+ */
+export async function getEncryptedConversation(
+    otherUserId: number,
+    token: string,
+    limit: number = 50,
+    offset: number = 0
+): Promise<any[]> {
+    try {
+        const url = new URL(`${API_BASE_URL}/api/dm/conversation/${otherUserId}`);
+        url.searchParams.append("limit", String(limit));
+        url.searchParams.append("offset", String(offset));
+
+        const response = await fetch(url.toString(), {
+            headers: getAuthHeaders(token, true)
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        return await response.json();
+    } catch (error) {
+        console.error(`Failed to fetch encrypted conversation with user ${otherUserId}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Delete an encrypted message.
+ */
+export async function deleteEncryptedDM(messageId: number, token: string): Promise<void> {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/dm/${messageId}`, {
+            method: "DELETE",
+            headers: getAuthHeaders(token, true)
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch (error) {
+        console.error(`Failed to delete encrypted DM ${messageId}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Clear cached keys (useful on logout).
+ */
+export function clearCachedKeys(): void {
+    cachedTransportKey = null;
+}

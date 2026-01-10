@@ -340,7 +340,6 @@ export function MessagePanelRenderer({ panel }: MessagePanelRendererProps) {
                                 <ChatMessages
                                     messages={panelState.messages}
                                     isDm={panel.isDm()}
-                                    dmRecipientPublicKey={(panel as DMPanel).dmData?.publicKey}
                                     onReplySelect={(message) => {
                                         if (editMessage || editVisible) {
                                             setPendingAction({ type: "reply", message: message });

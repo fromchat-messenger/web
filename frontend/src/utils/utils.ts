@@ -33,7 +33,17 @@ export function delay(ms: number): Promise<void> {
 }
 
 
-export function b64(a: Uint8Array): string { return btoa(String.fromCharCode(...a)); }
+export function b64(a: Uint8Array): string {
+	// Avoid spreading large arrays into String.fromCharCode (stack overflow).
+	const chunkSize = 0x8000; // 32KB
+	let binary = "";
+	for (let i = 0; i < a.length; i += chunkSize) {
+		const slice = a.subarray(i, i + chunkSize);
+		binary += String.fromCharCode.apply(null, Array.from(slice) as number[]);
+	}
+	return btoa(binary);
+}
+
 export function ub64(s: string): Uint8Array {
 	const bin = atob(s);
 	const arr = new Uint8Array(bin.length);

@@ -58,25 +58,6 @@ export async function rotateCallSessionKey(): Promise<CallSessionKey> {
     };
 }
 
-/**
- * Create session key from hash (for backward compatibility)
- * @deprecated Use deriveCallSessionKeyFromSharedSecret instead
- */
-export async function createCallSessionKeyFromHash(hash: string): Promise<CallSessionKey> {
-    // For backward compatibility, generate a deterministic key from the hash
-    const hashBytes = ub64(hash);
-    const sessionKey = new Uint8Array(32);
-
-    // Repeat the hash bytes to fill 32 bytes
-    for (let i = 0; i < 32; i++) {
-        sessionKey[i] = hashBytes[i % hashBytes.length];
-    }
-
-    return {
-        key: sessionKey,
-        hash
-    };
-}
 
 /**
  * Derive session key from ECDH shared secret and session key hash

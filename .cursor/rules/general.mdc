@@ -59,3 +59,8 @@ When working with this project, follow these rules:
 
 ## Animations with Framer Motion
 - Don't use variants if they are used only once
+
+## Debug Mode
+- When in debug mode and the issue is not yet fixed, ALWAYS end responses with `<reproduction_steps>` containing the steps to reproduce the issue and trigger logging
+- When NOT in debug mode or when the issue IS fixed, escape the tag as `&lt;reproduction_steps&gt;` to avoid triggering it
+- Never use other `<re>` tags, only `<reproduction_steps>`

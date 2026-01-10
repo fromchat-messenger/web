@@ -55,7 +55,13 @@ export class DMPanel extends MessagePanel {
     }
 
     private async parseTextPayload(env: DmEnvelope, decryptedMessages: Message[]) {
-        const plaintext = await api.chats.dm.decrypt(env, this.dmData!.publicKey);
+        console.log("🔔 DMPanel parsing message:", {
+            envelopeId: env.id,
+            currentUserId: this.currentUser.currentUser?.id,
+            envelopeRecipientId: env.recipientId,
+            envelopeSenderId: env.senderId
+        });
+        const plaintext = await api.chats.dm.decrypt(env, this.currentUser.currentUser?.id);
         const username = formatDMUsername(
             env.senderId,
             env.recipientId,
@@ -182,31 +188,24 @@ export class DMPanel extends MessagePanel {
     }
 
     protected async sendMessage(content: string, replyToId?: number, files: File[] = []): Promise<void> {
-        if (!this.currentUser.authToken || !this.dmData || !content.trim()) return;
-
-        const payload: DmEncryptedJSON = {
-            type: "text",
-            data: {
-                content: content.trim(),
-                reply_to_id: replyToId ?? undefined
-            }
-        }
-        const json = JSON.stringify(payload);
+        if (!this.currentUser.authToken || !this.dmData || (!content.trim() && files.length === 0)) return;
 
         if (files.length === 0) {
             await api.chats.dm.send(
                 this.dmData.userId,
                 this.dmData.publicKey,
-                json,
-                this.currentUser.authToken
+                content.trim(),
+                this.currentUser.authToken,
+                replyToId
             );
         } else {
             await api.chats.dm.sendWithFiles(
                 this.dmData.userId,
                 this.dmData.publicKey,
-                json,
                 files,
-                this.currentUser.authToken
+                content.trim(),
+                this.currentUser.authToken,
+                replyToId
             );
         }
     }
@@ -259,7 +258,7 @@ export class DMPanel extends MessagePanel {
             }
         }
         if (response.type === "dmEdited" && this.dmData) {
-            const { id, iv, ciphertext, salt, iv2, wrappedMk } = response.data;
+            const { id, iv, ciphertext, wrappedMk } = response.data;
             try {
                 // Decrypt new content in-place
                 const plaintext = await api.chats.dm.decrypt(
@@ -267,14 +266,12 @@ export class DMPanel extends MessagePanel {
                         id,
                         senderId: 0,
                         recipientId: 0,
-                        iv,
-                        ciphertext,
-                        salt,
-                        iv2,
-                        wrappedMk,
+                        iv_b64: iv,
+                        ciphertext_b64: ciphertext,
+                        wrapped_mek_b64: wrappedMk,
                         timestamp: new Date().toISOString()
                     },
-                    this.dmData.publicKey
+                    this.currentUser.currentUser?.id
                 );
                 let content = plaintext;
                 let files: Message["files"] | undefined = undefined;
@@ -369,19 +366,26 @@ export class DMPanel extends MessagePanel {
 
     async handleEditMessage(messageId: number, content: string): Promise<void> {
         if (!this.currentUser.authToken || !this.dmData) return;
-        const msg = this.getMessages().find(m => m.id === messageId);
-        // Build encrypted JSON preserving files and reply_to if present
-        const payload: EncryptedMessageJson = {
-            type: "text",
-            data: {
-                content: content,
-                files: msg?.files,
-                reply_to_id: msg?.reply_to?.id ?? undefined
-            }
-        };
-        api.chats.dm.edit(messageId, this.dmData.publicKey, JSON.stringify(payload), this.currentUser.authToken).catch((e) => {
-            console.error("Failed to edit DM:", e);
-        });
+
+        try {
+            await api.chats.dm.editMessage(
+                messageId,
+                this.dmData.publicKey,
+                content.trim(),
+                this.currentUser.authToken
+            );
+
+            // Update the message in the UI
+            this.updateMessage(messageId, {
+                content: content.trim(),
+                is_edited: true
+            });
+
+            // Send WebSocket updates will be handled by the server
+        } catch (error) {
+            console.error("Failed to edit DM:", error);
+            throw error;
+        }
     }
 
     async getProfile(): Promise<ProfileDialogData | null> {

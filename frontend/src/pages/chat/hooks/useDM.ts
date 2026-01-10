@@ -64,7 +64,13 @@ export function useDM() {
             let lastPlaintext: string | null = null;
 
             try {
-                lastPlaintext = (JSON.parse(await api.chats.dm.decrypt(lastMessage, publicKey)) as DmEncryptedJSON).data.content;
+                const decrypted = await api.chats.dm.decrypt(lastMessage, user.currentUser?.id);
+                try {
+                    lastPlaintext = (JSON.parse(decrypted) as DmEncryptedJSON).data.content;
+                } catch {
+                    // Fallback: decrypted payload is plain text
+                    lastPlaintext = decrypted;
+                }
             } catch (error) {
                 console.error("Failed to decrypt last message:", error);
             }
@@ -118,9 +124,14 @@ export function useDM() {
                             const publicKey = await api.chats.dm.fetchUserPublicKey(otherUserId, user.authToken!);
                             if (publicKey) {
                                 // Decrypt the last message
-                                const decryptedJson = await api.chats.dm.decrypt(conv.lastMessage, publicKey!);
-                                const decryptedData = JSON.parse(decryptedJson) as DmEncryptedJSON;
-                                lastMessageContent = formatDMMessageContent(decryptedData.data.content, conv.lastMessage.senderId, user.currentUser?.id!);
+                                const decryptedJson = await api.chats.dm.decrypt(conv.lastMessage, user.currentUser?.id);
+                                let messageText: string;
+                                try {
+                                    messageText = (JSON.parse(decryptedJson) as DmEncryptedJSON).data.content;
+                                } catch {
+                                    messageText = decryptedJson;
+                                }
+                                lastMessageContent = formatDMMessageContent(messageText, conv.lastMessage.senderId, user.currentUser?.id!);
                             }
                         } catch (error) {
                             console.error("Failed to decrypt last message for user", conv.user.id, error);
@@ -152,7 +163,7 @@ export function useDM() {
     }, [user.authToken]);
 
     // Load DM history for active conversation
-    const loadDMHistory = useCallback(async (userId: number, publicKey: string) => {
+    const loadDMHistory = useCallback(async (userId: number) => {
         if (!user.authToken || isLoadingHistory) return;
 
         setIsLoadingHistory(true);
@@ -163,7 +174,7 @@ export function useDM() {
 
             for (const env of messages) {
                 try {
-                    const text = await api.chats.dm.decrypt(env, publicKey);
+                    const text = await api.chats.dm.decrypt(env, user.currentUser?.id);
                     const isAuthor = env.senderId !== userId;
                     const username = isAuthor ? (user.currentUser?.username || "Unknown") : "Other User";
 
@@ -234,7 +245,7 @@ export function useDM() {
             });
 
             // Load conversation history
-            await loadDMHistory(dmUser.id, publicKey);
+            await loadDMHistory(dmUser.id);
         } catch (error) {
             console.error("Failed to start DM conversation:", error);
         }
@@ -267,9 +278,14 @@ export function useDM() {
                         const publicKey = await api.chats.dm.fetchUserPublicKey(otherUserId, user.authToken!);
                         if (publicKey) {
                             // Decrypt the last message
-                            const decryptedJson = await api.chats.dm.decrypt(userConversation.lastMessage, publicKey!);
-                            const decryptedData = JSON.parse(decryptedJson) as DmEncryptedJSON;
-                            lastMessageContent = formatDMMessageContent(decryptedData.data.content, userConversation.lastMessage.senderId, user.currentUser?.id!);
+                            const decryptedJson = await api.chats.dm.decrypt(userConversation.lastMessage, user.currentUser?.id);
+                            let messageText: string;
+                            try {
+                                messageText = (JSON.parse(decryptedJson) as DmEncryptedJSON).data.content;
+                            } catch {
+                                messageText = decryptedJson;
+                            }
+                            lastMessageContent = formatDMMessageContent(messageText, userConversation.lastMessage.senderId, user.currentUser?.id!);
                         }
                     } catch (error) {
                         console.error("Failed to decrypt last message for user", userId, error);
@@ -318,7 +334,7 @@ export function useDM() {
                     try {
                         const publicKey = await api.chats.dm.fetchUserPublicKey(otherUserId, user.authToken!);
                         if (publicKey) {
-                            const decryptedJson = await api.chats.dm.decrypt(envelope, publicKey);
+                            const decryptedJson = await api.chats.dm.decrypt(envelope, user.currentUser?.id);
                             const decryptedData = JSON.parse(decryptedJson) as DmEncryptedJSON;
                             const messageContent = decryptedData.data.content;
                             const formattedMessage = formatDMMessageContent(messageContent, senderId, user.currentUser.id);
@@ -348,7 +364,7 @@ export function useDM() {
                     try {
                         const publicKey = await api.chats.dm.fetchUserPublicKey(otherUserId, user.authToken!);
                         if (publicKey) {
-                            const decryptedJson = await api.chats.dm.decrypt(envelope, publicKey);
+                            const decryptedJson = await api.chats.dm.decrypt(envelope, user.currentUser?.id);
                             const decryptedData = JSON.parse(decryptedJson) as DmEncryptedJSON;
                             const messageContent = decryptedData.data.content;
                             const formattedMessage = formatDMMessageContent(messageContent, senderId, user.currentUser.id);

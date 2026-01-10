@@ -1,0 +1,10 @@
+FROM postgres:15
+
+# Install envsubst for environment variable substitution
+RUN apt-get update && apt-get install -y gettext-base && rm -rf /var/lib/apt/lists/*
+
+# Copy the template
+COPY init-postgres.sql.template /docker-entrypoint-initdb.d/init-postgres.sql.template
+
+# Set the default command to process template and run PostgreSQL
+CMD ["bash", "-c", "if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then echo 'Processing PostgreSQL init template...'; envsubst < /docker-entrypoint-initdb.d/init-postgres.sql.template > /docker-entrypoint-initdb.d/init-postgres.sql; echo 'Template processing complete.'; fi; exec docker-entrypoint.sh postgres"]
