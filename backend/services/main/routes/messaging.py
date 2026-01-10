@@ -10,12 +10,9 @@ import time
 import unicodedata
 from collections import defaultdict, deque
 from difflib import SequenceMatcher
-from types import SimpleNamespace
 from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Request, status
-from fastapi.responses import FileResponse
-from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from ..dependencies import get_current_user, get_db
 from .account import convert_user
@@ -54,7 +51,6 @@ def _get_file_storage_url() -> str:
         or os.getenv("FILE_STORAGE_URL")
         or "http://127.0.0.1:8302"
     )
-
 
 _SPAM_WINDOW_SECONDS = 45
 _SPAM_SIMILARITY_THRESHOLD = 0.88
@@ -628,135 +624,6 @@ async def mark_messages_read(request: Request, read_request: MarkReadRequest, cu
     return {"status": "success", "updated": int(updated_count)}
 
 
-@router.post("/dm/send-legacy")
-@rate_limit_per_ip("20/minute")
-async def dm_send(
-    request: Request,
-    payload: dict | None = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    # Multipart support
-    dm_payload: str | None = Form(default=None),
-    files: list[UploadFile] = File(default=[]),
-    fileNames: str | None = Form(default=None),  # JSON array of filenames corresponding to files
-):
-    if dm_payload and payload is None:
-        try:
-            payload = json.loads(dm_payload)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid dm_payload JSON")
-
-    if payload is None:
-        raise HTTPException(status_code=400, detail="Missing payload")
-
-    required = ["recipientId", "iv", "ciphertext", "salt", "iv2", "wrappedMk"]
-    for key in required:
-        if key not in payload:
-            raise HTTPException(status_code=400, detail=f"Missing {key}")
-
-    try:
-        recipient_id = int(payload["recipientId"])
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid recipientId")
-    
-    if recipient_id <= 0:
-        raise HTTPException(status_code=400, detail="Invalid recipientId")
-    
-    if recipient_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot send DM to yourself")
-    
-    # Verify recipient exists
-    recipient = db.query(User).filter(User.id == recipient_id).first()
-    if not recipient or recipient.deleted or recipient.suspended:
-        raise HTTPException(status_code=404, detail="Recipient not found")
-
-    env = DMEnvelope(
-        sender_id=current_user.id,
-        recipient_id=recipient_id,
-        iv_b64=payload["iv"],
-        ciphertext_b64=payload["ciphertext"],
-        sender_wrapped_mek_b64=payload.get("wrappedMk", ""),
-        recipient_wrapped_mek_b64=payload.get("wrappedMk", ""),
-        reply_to_id=payload.get("replyToId") if isinstance(payload.get("replyToId"), int) else None,
-    )
-    db.add(env)
-    db.commit()
-    db.refresh(env)
-
-    # Save encrypted files if any (no processing)
-    if files:
-        # Validate total size
-        total_size = 0
-        for file in files:
-            if hasattr(file, "size") and file.size is not None:
-                total_size += int(file.size)
-            else:
-                data = await file.read()
-                file.file.seek(0)
-                total_size += len(data)
-            if total_size > MAX_TOTAL_SIZE:
-                raise HTTPException(status_code=400, detail="Total attachments size exceeds 4GB")
-
-        names: list[str] = []
-        if fileNames:
-            try:
-                decoded = json.loads(fileNames)
-                if isinstance(decoded, list):
-                    names = [str(x) for x in decoded]
-            except Exception:
-                names = []
-
-        for i, file in enumerate(files):
-            provided = names[i] if i < len(names) else None
-            # Sanitize provided name to avoid path traversal
-            if provided and not re.match(r"^[A-Za-z0-9._-]{1,200}$", provided):
-                provided = None
-            original_name = provided or Path(file.filename or "file").name
-            # Save using provided/original name to allow client to reference path directly
-            safe_name = uid = uuid.uuid4().hex
-            out_name = f"{current_user.id}_{env.recipient_id}_{env.id}_{safe_name}"
-            out_path = FILES_ENCRYPTED_DIR / out_name
-
-            content = await file.read()
-            with open(out_path, "wb") as f:
-                f.write(content)
-
-            # Save DM file record
-            df = DMFile(
-                message_id=env.id,
-                sender_id=current_user.id,
-                recipient_id=env.recipient_id,
-                path=f"/api/uploads/files/encrypted/{out_name}",
-                name=original_name
-            )
-            db.add(df)
-        db.commit()
-        db.refresh(env)
-
-    # Send push notification for DM
-    try:
-        await push_service.send_dm_notification(db, env, current_user)
-    except Exception as e:
-        logger.error(f"Failed to send push notification for DM {env.id}: {e}")
-
-    # Send user-specific WebSocket updates (each user gets only their MEK)
-    recipient_payload = convert_dm_envelope(db, env, env.recipient_id)
-    await messagingManager.send_update_to_user(env.recipient_id, "dmNew", recipient_payload, db)
-
-    sender_payload = convert_dm_envelope(db, env, env.sender_id)
-    await messagingManager.send_update_to_user(env.sender_id, "dmNew", sender_payload, db)
-
-    log_dm(
-        "message_sent",
-        dm_envelope_id=env.id,
-        sender_id=current_user.id,
-        sender_username=current_user.username,
-        recipient_id=env.recipient_id,
-        attachment_count=len(env.files or []),
-        reply_to=env.reply_to_id,
-    )
-
-    return {"status": "ok", "id": env.id}
 
 
 @router.get("/dm/fetch")
@@ -1116,14 +983,23 @@ class MessaggingSocketManager:
         if websocket.client_state.name == "CONNECTED":
             await websocket.send_json({"type": type, "error": {"code": e.status_code, "detail": e.detail}})
 
-    async def _get_next_sequence(self, user_id: int) -> int:
+    async def _get_next_sequence(self, user_id: int, db: Session | None = None) -> int:
         """Get the next sequence number for a user (shared across all their connections) - thread-safe"""
         if user_id not in self._sequence_lock:
             self._sequence_lock[user_id] = asyncio.Lock()
-        
+
         async with self._sequence_lock[user_id]:
             if user_id not in self.sequence_numbers:
-                self.sequence_numbers[user_id] = 0
+                # Initialize from database to avoid conflicts on restart
+                if db:
+                    try:
+                        from ..models import UpdateLog
+                        latest = db.query(UpdateLog).filter(UpdateLog.user_id == user_id).order_by(UpdateLog.sequence.desc()).first()
+                        self.sequence_numbers[user_id] = latest.sequence if latest else 0
+                    except Exception:
+                        self.sequence_numbers[user_id] = 0
+                else:
+                    self.sequence_numbers[user_id] = 0
             self.sequence_numbers[user_id] += 1
             return self.sequence_numbers[user_id]
 
@@ -1226,7 +1102,7 @@ class MessaggingSocketManager:
                 logger.warning(f"Attempted to flush updates for unauthenticated websocket, skipping")
                 return
             
-            seq = await self._get_next_sequence(user_id)
+            seq = await self._get_next_sequence(user_id, db)
             
             # Store updates in database for gap detection (only once per user per sequence)
             if db:
@@ -1549,12 +1425,14 @@ async def chat_websocket(
 # File serving proxy endpoints
 # Proxy file requests to file_storage service
 
+import httpx
+
 
 @router.api_route("/uploads/files/normal/{filename:path}", methods=["GET"])
 async def proxy_normal_file(
     request: Request,
     filename: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user)
 ):
     """Proxy file requests to file_storage service."""
     mod = service_calls._get_file_storage_module()
@@ -1574,12 +1452,11 @@ async def proxy_normal_file(
         try:
             response = await client.get(target_url, headers=headers)
             from fastapi.responses import Response
-
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers=dict(response.headers),
-                media_type=response.headers.get("content-type"),
+                media_type=response.headers.get("content-type")
             )
         except httpx.RequestError as e:
             logger.error("Failed to proxy file request: %s", e)
@@ -1592,15 +1469,15 @@ async def test_proxy():
     file_storage_url = _get_file_storage_url()
     target_url = f"{file_storage_url}/health"
 
-    logger.info("Testing proxy to: %s", target_url)
+    logger.info(f"Testing proxy to: {target_url}")
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(target_url, follow_redirects=False)
-            logger.info("Test proxy response: %s", response.status_code)
+            logger.info(f"Test proxy response: {response.status_code}")
             return {"status": "ok", "response_code": response.status_code}
         except Exception as e:
-            logger.error("Test proxy failed: %s", e)
+            logger.error(f"Test proxy failed: {e}")
             return {"status": "error", "error": str(e)}
 
 
@@ -1608,7 +1485,7 @@ async def test_proxy():
 async def proxy_encrypted_file(
     request: Request,
     filename: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user)
 ):
     """Proxy file requests to file_storage service."""
     mod = service_calls._get_file_storage_module()
@@ -1629,12 +1506,11 @@ async def proxy_encrypted_file(
         try:
             response = await client.get(target_url, headers=headers, follow_redirects=False)
             from fastapi.responses import Response
-
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers=dict(response.headers),
-                media_type=response.headers.get("content-type"),
+                media_type=response.headers.get("content-type")
             )
         except Exception as e:
             logger.error("Failed to proxy file request: %s", e)
@@ -1646,7 +1522,7 @@ async def get_message_edit_history_for_compliance(
     request: Request,
     message_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
     """
     Get complete edit history for a public message (compliance access only).
@@ -1663,72 +1539,58 @@ async def get_message_edit_history_for_compliance(
     Returns:
         Complete edit history for the message
     """
-    client_ip = getattr(request.client, "host", "unknown") if request.client else "unknown"
+    client_ip = getattr(request.client, 'host', 'unknown') if request.client else 'unknown'
 
     # Log compliance access attempt
-    log_security(
-        "message_edit_history_access_attempt",
-        "warning",
-        user_id=current_user.id,
-        username=current_user.username,
-        ip=client_ip,
-        message_id=message_id,
-    )
+    log_security("message_edit_history_access_attempt", "warning",
+                user_id=current_user.id,
+                username=current_user.username,
+                ip=client_ip,
+                message_id=message_id)
 
     # Only user_id 1 (compliance officer) can access
     if current_user.id != 1:
-        log_security(
-            "message_edit_history_access_denied",
-            "error",
-            user_id=current_user.id,
-            username=current_user.username,
-            ip=client_ip,
-            reason="Unauthorized user (compliance officer access required)",
-        )
+        log_security("message_edit_history_access_denied", "error",
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    ip=client_ip,
+                    reason="Unauthorized user (compliance officer access required)")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. This endpoint is restricted to compliance officers.",
+            detail="Access denied. This endpoint is restricted to compliance officers."
         )
 
     try:
         # Get the original message
         message = db.query(Message).filter(Message.id == message_id).first()
         if not message:
-            log_security(
-                "message_edit_history_access_failed",
-                "warning",
-                user_id=current_user.id,
-                ip=client_ip,
-                message_id=message_id,
-                reason="Message not found",
-            )
+            log_security("message_edit_history_access_failed", "warning",
+                        user_id=current_user.id,
+                        ip=client_ip,
+                        message_id=message_id,
+                        reason="Message not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Message not found",
+                detail="Message not found"
             )
 
         # Get edit history
-        edit_history = (
-            db.query(MessageEditHistory)
-            .filter(MessageEditHistory.message_id == message_id)
-            .order_by(MessageEditHistory.edited_at)
-            .all()
-        )
+        edit_history = db.query(MessageEditHistory).filter(
+            MessageEditHistory.message_id == message_id
+        ).order_by(MessageEditHistory.edited_at).all()
 
         # Convert to response format
         history_entries = []
         for entry in edit_history:
             edited_by_user = db.query(User).filter(User.id == entry.edited_by_user_id).first()
-            history_entries.append(
-                {
-                    "id": entry.id,
-                    "message_id": entry.message_id,
-                    "previous_content": entry.previous_content,
-                    "edited_at": entry.edited_at.isoformat(),
-                    "edited_by_username": edited_by_user.username if edited_by_user else "unknown",
-                    "edited_by_user_id": entry.edited_by_user_id,
-                }
-            )
+            history_entries.append({
+                "id": entry.id,
+                "message_id": entry.message_id,
+                "previous_content": entry.previous_content,
+                "edited_at": entry.edited_at.isoformat(),
+                "edited_by_username": edited_by_user.username if edited_by_user else "unknown",
+                "edited_by_user_id": entry.edited_by_user_id
+            })
 
         # Current message data
         current_data = {
@@ -1736,25 +1598,22 @@ async def get_message_edit_history_for_compliance(
             "content": message.content,
             "user_id": message.user_id,
             "timestamp": message.timestamp.isoformat(),
-            "is_edited": message.is_edited,
+            "is_edited": message.is_edited
         }
 
         result = {
             "message_id": message_id,
             "current_version": current_data,
             "edit_history": history_entries,
-            "total_edits": len(history_entries),
+            "total_edits": len(history_entries)
         }
 
-        log_security(
-            "message_edit_history_access_success",
-            "info",
-            user_id=current_user.id,
-            username=current_user.username,
-            ip=client_ip,
-            message_id=message_id,
-            edit_count=len(history_entries),
-        )
+        log_security("message_edit_history_access_success", "info",
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    ip=client_ip,
+                    message_id=message_id,
+                    edit_count=len(history_entries))
 
         return result
 
@@ -1762,15 +1621,12 @@ async def get_message_edit_history_for_compliance(
         raise
     except Exception as e:
         logger.exception("Error retrieving message edit history: %s", e)
-        log_security(
-            "message_edit_history_access_error",
-            "error",
-            user_id=current_user.id,
-            ip=client_ip,
-            message_id=message_id,
-            error=str(e),
-        )
+        log_security("message_edit_history_access_error", "error",
+                    user_id=current_user.id,
+                    ip=client_ip,
+                    message_id=message_id,
+                    error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve edit history",
+            detail="Failed to retrieve edit history"
         )

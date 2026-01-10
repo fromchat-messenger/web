@@ -46,6 +46,39 @@ def _yes_no(flag: Any) -> str:
 
 
 def _render_security(action: str, fields: Dict[str, Any]) -> List[str]:
+    # Handle compliance-related actions with beautiful formatting
+    if action == "compliance_access_attempt":
+        lines = [f"Compliance access attempt for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"User: {_format_user(fields)}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        return lines
+    if action == "compliance_access_denied":
+        lines = [f"Compliance access denied for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"User: {_format_user(fields)}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        if fields.get("reason"):
+            lines.append(f"Reason: {fields['reason']}")
+        return lines
+    if action == "compliance_access_failed":
+        lines = [f"Compliance access failed for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"User: {_format_user(fields)}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        if fields.get("reason"):
+            lines.append(f"Reason: {fields['reason']}")
+        return lines
+    if action == "compliance_extraction_success":
+        lines = [f"Compliance extraction successful for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"Officer: {_format_user(fields)}")
+        sender_id = fields.get("sender_id")
+        recipient_id = fields.get("recipient_id")
+        if sender_id is not None and recipient_id is not None:
+            lines.append(f"Message: {_format_user({'username': fields.get('sender_username'), 'user_id': sender_id})} → {_format_user({'username': fields.get('recipient_username'), 'user_id': recipient_id})}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        return lines
     if action == "login_success":
         lines = [f"Login approved for {_format_user(fields)}"]
         session = fields.get("session_id")
@@ -61,14 +94,14 @@ def _render_security(action: str, fields: Dict[str, Any]) -> List[str]:
         if client_bits:
             lines.append(f"Client: {', '.join(client_bits)}")
         if fields.get("ip"):
-            lines.append(f"IP address: {fields['ip']}")
+            lines.append(f"IP: {fields['ip']}")
         return lines
     if action == "login_failed":
         lines = [f"Login denied for {_format_user(fields)}"]
         if fields.get("reason"):
             lines.append(f"Reason: {fields['reason']}")
         if fields.get("ip"):
-            lines.append(f"IP address: {fields['ip']}")
+            lines.append(f"IP: {fields['ip']}")
         return lines
     if action == "auth_bruteforce_detected":
         lines = ["Brute-force login pattern detected"]
@@ -78,7 +111,7 @@ def _render_security(action: str, fields: Dict[str, Any]) -> List[str]:
             for key, value in failures.items():
                 lines.append(f"{key}: {value}")
         if fields.get("ip"):
-            lines.append(f"IP address: {fields['ip']}")
+            lines.append(f"IP: {fields['ip']}")
         if fields.get("window_seconds"):
             lines.append(f"Observation window: {fields['window_seconds']} seconds")
         return lines
@@ -103,14 +136,14 @@ def _render_security(action: str, fields: Dict[str, Any]) -> List[str]:
         lines = [f"Password changed for {_format_user(fields)}"]
         lines.append(f"Other sessions revoked: {_yes_no(fields.get('logout_others'))}")
         if fields.get("ip"):
-            lines.append(f"IP address: {fields['ip']}")
+            lines.append(f"IP: {fields['ip']}")
         return lines
     if action == "logout":
         lines = [f"Logout recorded for {_format_user(fields)}"]
         if fields.get("session_id"):
             lines.append(f"Session: {fields['session_id']}")
         if fields.get("ip"):
-            lines.append(f"IP address: {fields['ip']}")
+            lines.append(f"IP: {fields['ip']}")
         return lines
     if action == "admin_delete_user":
         return [
@@ -366,6 +399,43 @@ def _render_access(action: str, fields: Dict[str, Any]) -> List[str]:
             if key in {"path", "event", "user", "user_id", "ip"} or value is None:
                 continue
             lines.append(f"{key.replace('_', ' ').capitalize()}: {value}")
+        return lines
+    if action == "compliance_access_attempt":
+        lines = [f"Compliance access attempt for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"User: {_format_user(fields)}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        return lines
+    if action == "compliance_access_denied":
+        lines = [f"Compliance access denied for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"User: {_format_user(fields)}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        if fields.get("reason"):
+            lines.append(f"Reason: {fields['reason']}")
+        return lines
+    if action == "compliance_access_failed":
+        lines = [f"Compliance access failed for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"User: {_format_user(fields)}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        if fields.get("reason"):
+            lines.append(f"Reason: {fields['reason']}")
+        return lines
+    if action == "compliance_extraction_success":
+        lines = [f"Compliance extraction successful for message {fields.get('message_id', 'unknown')}"]
+        lines.append(f"Officer: {_format_user(fields)}")
+        sender_id = fields.get("sender_id")
+        recipient_id = fields.get("recipient_id")
+        if sender_id is not None and recipient_id is not None:
+            lines.append(f"Message: {_format_user({'username': fields.get('sender_username'), 'user_id': sender_id})} → {_format_user({'username': fields.get('recipient_username'), 'user_id': recipient_id})}")
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
+        return lines
+    if action == "compliance_public_key_access":
+        lines = [f"Compliance public key accessed"]
+        if fields.get("ip"):
+            lines.append(f"IP: {fields['ip']}")
         return lines
     return [f"{action.replace('_', ' ').capitalize()}"] + [
         f"{key.replace('_', ' ').capitalize()}: {value}"

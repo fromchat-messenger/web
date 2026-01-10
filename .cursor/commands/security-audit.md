@@ -5,6 +5,7 @@ Perform a comprehensive security audit of the FromChat application codebase.
 ## Project Context
 
 **FromChat** is a 100% open source secure messaging application with:
+
 - React/TypeScript frontend
 - Python FastAPI backend
 - End-to-end encryption for DMs and calls
@@ -17,43 +18,36 @@ Perform a comprehensive security audit of the FromChat application codebase.
 When auditing, remember these are **intentional design choices**:
 
 1. **Public messages endpoint** - Open forum accessible without authentication (by design)
-   - The public chat is meant to be an open forum
-   - Private DMs are properly E2E encrypted and require authentication
-
+  - The public chat is meant to be an open forum
+  - Private DMs are properly E2E encrypted and require authentication
 2. **Public user list** - All users visible in DMs tab (by design)
-   - Users can see all registered accounts
-   - This is intentional for a community-based chat app
-
+  - Users can see all registered accounts
+  - This is intentional for a community-based chat app
 3. **XSS protection** - Multi-layer defense already implemented:
-   - React auto-escaping
-   - DOMPurify for sanitization
-   - Caddy CSP headers
-   - Do NOT flag localStorage key storage as critical (already well-protected)
-
+  - React auto-escaping
+  - DOMPurify for sanitization
+  - Caddy CSP headers
+  - Do NOT flag localStorage key storage as critical (already well-protected)
 4. **File upload security** - Docker isolation in place:
-   - Server runs in Docker without executable flags
-   - Files cannot execute on server
-   - PIL re-encodes images
-   - Do NOT flag Content-Type validation as critical
-
+  - Server runs in Docker without executable flags
+  - Files cannot execute on server
+  - PIL re-encodes images
+  - Do NOT flag Content-Type validation as critical
 5. **CSRF protection** - Not needed:
-   - No cookies used
-   - JWT tokens in Authorization headers only
-   - CSRF attacks don't apply to this auth model
-
+  - No cookies used
+  - JWT tokens in Authorization headers only
+  - CSRF attacks don't apply to this auth model
 6. **Beta domain CSP** - 'unsafe-inline' is required:
-   - Beta domain (beta.fromchat.ru) points to development machine
-   - Vite dev server requires 'unsafe-inline' to function
-   - Production domain has strict CSP
-
+  - Beta domain (beta.fromchat.ru) points to development machine
+  - Vite dev server requires 'unsafe-inline' to function
+  - Production domain has strict CSP
 7. **Security logging** - Already implemented:
-   - All events are logged including security-related activity
-   - Do NOT flag as missing
-
+  - All events are logged including security-related activity
+  - Do NOT flag as missing
 8. **100% Open Source** - This is a security strength:
-   - Full transparency
-   - Community review capability
-   - No hidden backdoors
+  - Full transparency
+  - Community review capability
+  - No hidden backdoors
 
 ## Android App
 
@@ -62,88 +56,6 @@ When auditing, remember these are **intentional design choices**:
 ## Infrastructure (Caddy)
 
 The application runs behind Caddy reverse proxy with comprehensive security controls:
-
-### Caddyfile Configuration
-
-```caddyfile
-fromchat.ru {
-	reverse_proxy 172.18.0.1:8301 host.docker.internal:8301 172.17.0.1:8301 {
-		lb_policy first
-	}
-
-	# Security headers
-	header {
-		X-XSS-Protection "1; mode=block" # Prevent XSS attacks
-		X-Content-Type-Options "nosniff" # Prevent MIME type sniffing
-		X-Frame-Options "DENY" # Prevent clickjacking
-		Referrer-Policy "strict-origin-when-cross-origin"
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';"
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		Permissions-Policy "geolocation=(), microphone=(self), camera=(self)"
-	}
-
-	rate_limit {
-		zone global {
-			key {remote_ip}
-			window 1m
-			burst 20
-			events 500
-		}
-	}
-
-	handle_errors {
-		@errors {
-			expression {err.status_code} >= 400
-		}
-
-		handle @errors {
-			rewrite * /{err.status_code}
-			reverse_proxy https://http.cat {
-				header_up Host {upstream_hostport}
-				replace_status {err.status_code}
-			}
-		}
-	}
-}
-
-beta.fromchat.ru {
-    reverse_proxy 95.165.0.162:8301
-
-	# Security headers
-	header {
-		X-XSS-Protection "1; mode=block" # Prevent XSS attacks
-		X-Content-Type-Options "nosniff" # Prevent MIME type sniffing
-		X-Frame-Options "DENY" # Prevent clickjacking
-		Referrer-Policy "strict-origin-when-cross-origin"
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';"
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		Permissions-Policy "geolocation=(), microphone=(self), camera=(self)"
-	}
-
-	rate_limit {
-		zone global {
-			key {remote_ip}
-			window 1m
-			burst 20
-			events 1000
-		}
-	}
-
-	handle_errors {
-		@errors {
-			expression {err.status_code} >= 400
-		}
-
-		handle @errors {
-			rewrite * /{err.status_code}
-			reverse_proxy https://http.cat {
-				header_up Host {upstream_hostport}
-				replace_status {err.status_code}
-			}
-		}
-	}
-}
-```
 
 ### Key Infrastructure Protections
 
@@ -193,6 +105,7 @@ Provide a **clean, concise report** with:
 ## Common False Positives to Avoid
 
 ❌ **DO NOT FLAG THESE AS ISSUES:**
+
 - Public messages endpoint (intentional)
 - Username enumeration (users list is public by design)
 - Keys in localStorage (XSS is well-protected)
@@ -205,6 +118,7 @@ Provide a **clean, concise report** with:
 ## Key Security Features to Verify
 
 ✅ **MUST CHECK:**
+
 - CORS configuration in backend/app.py
 - Password validation in backend/validation.py
 - JWT token generation and validation

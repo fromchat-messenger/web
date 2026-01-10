@@ -116,6 +116,11 @@ def process_encrypted_message(
         sender_wrapped_mek = wrap_mek(mek, sender_wrap_key)
         recipient_wrapped_mek = wrap_mek(mek, recipient_wrap_key)
 
+        logger.info(f"🔐 MEK wrapping complete:")
+        logger.info(f"   Compliance MEK: {compliance_wrapped_mek[:30]}... ({len(compliance_wrapped_mek)} chars)")
+        logger.info(f"   Sender MEK: {sender_wrapped_mek[:30]}... ({len(sender_wrapped_mek)} chars)")
+        logger.info(f"   Recipient MEK: {recipient_wrapped_mek[:30]}... ({len(recipient_wrapped_mek)} chars)")
+
         duration = time.time() - start_time
         logger.info(
             "CRYPTO: Successfully processed message with 3 MEK wraps (compliance/sender/recipient) in %.2fms",

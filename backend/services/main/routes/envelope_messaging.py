@@ -10,9 +10,11 @@ Handles:
 
 import logging
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -26,10 +28,26 @@ from ..service_calls import (
     get_compliance_public_key,
     process_message_with_files_in_messaging_service,
     store_encrypted_file,
+    init_resumable_upload_in_storage,
+    get_resumable_upload_status_in_storage,
+    upload_resumable_chunk_in_storage,
+    complete_resumable_upload_in_storage,
+    get_resumable_upload_data_in_storage,
+    delete_resumable_upload_in_storage,
 )
 from .messaging import messagingManager, convert_dm_envelope
 
 logger = logging.getLogger("uvicorn.error")
+
+
+def _compliance_public_key_required() -> bool:
+    try:
+        from services.shared.message_retention import get_message_retention
+    except ImportError:
+        from backend.services.shared.message_retention import get_message_retention  # type: ignore
+    return not get_message_retention().never_store_compliance_mek()
+
+
 router = APIRouter(prefix="/dm", tags=["Direct Messages"])
 
 
@@ -51,8 +69,10 @@ class SendEncryptedMessageRequest(BaseModel):
     transport_ciphertext_b64: str
     sender_public_key_b64: str
     recipient_public_key_b64: str
+    client_message_id: Optional[str] = None
     reply_to_id: Optional[int] = None
     files: list[FileModel] = Field(default_factory=list, alias="transport_files")
+    uploaded_file_ids: list[str] = Field(default_factory=list, alias="uploaded_file_ids")
 
     class Config:
         allow_population_by_field_name = True
@@ -67,17 +87,29 @@ class EditEncryptedMessageRequest(BaseModel):
     recipient_public_key_b64: str
 
 
+class InitResumableUploadRequest(BaseModel):
+    filename: str
+    total_size: int
+    recipient_id: int
+    chunk_size: Optional[int] = None
+
+
+class UploadChunkRequest(BaseModel):
+    offset: int
+    data_b64: str
+
+
 # ============================================================================
 # Key Management Endpoint
 # ============================================================================
 
 @router.get("/key/transport/public")
-async def get_transport_public_key_endpoint():
+async def get_transport_public_key_endpoint(request: Request):
     """
     Get the current messaging service ephemeral transport public key.
-    
+
     Clients use this key to encrypt their messages with X25519 + ChaCha20-Poly1305.
-    
+
     Returns:
         {
             "key_id": "key-identifier",
@@ -85,8 +117,11 @@ async def get_transport_public_key_endpoint():
             "created_at": "unix-timestamp"
         }
     """
+    client_ip = getattr(request.client, 'host', 'unknown') if request.client else 'unknown'
+
     try:
-        return await get_messaging_transport_public_key()
+        result = await get_messaging_transport_public_key()
+        return result
     except Exception as e:
         logger.error("Failed to fetch transport public key: %s", e)
         raise HTTPException(
@@ -95,27 +130,64 @@ async def get_transport_public_key_endpoint():
         )
 
 
-@router.get("/key/compliance/public")
-async def get_compliance_public_key_endpoint():
-    """
-    Get the compliance system public key (for MEK wrapping).
+@router.post("/upload/init")
+async def init_resumable_upload(
+    request: InitResumableUploadRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if request.total_size <= 0:
+        raise HTTPException(status_code=400, detail="total_size must be > 0")
 
-    This key is generated offline on an air-gapped machine and used to wrap MEKs
-    so the compliance system can decrypt archived messages for audit.
+    if current_user.id == request.recipient_id:
+        raise HTTPException(status_code=400, detail="Cannot send files to yourself")
 
-    Returns:
-        {
-            "public_key_b64": "base64-encoded-key"
-        }
-    """
-    try:
-        return await get_compliance_public_key()
-    except Exception as e:
-        logger.error("Failed to fetch compliance public key: %s", e)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch compliance key"
-        )
+    payload = await init_resumable_upload_in_storage(
+        filename=request.filename,
+        total_size=request.total_size,
+        allowed_user_ids=[current_user.id, request.recipient_id],
+        chunk_size=request.chunk_size,
+    )
+    return payload
+
+
+@router.get("/upload/{upload_id}")
+async def get_resumable_upload_status(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    return await get_resumable_upload_status_in_storage(upload_id, current_user.id)
+
+
+@router.patch("/upload/{upload_id}")
+async def upload_resumable_chunk(
+    upload_id: str,
+    request: UploadChunkRequest,
+    current_user: User = Depends(get_current_user),
+):
+    return await upload_resumable_chunk_in_storage(
+        upload_id=upload_id,
+        user_id=current_user.id,
+        offset=request.offset,
+        data_b64=request.data_b64,
+    )
+
+
+@router.post("/upload/{upload_id}/complete")
+async def complete_resumable_upload(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    return await complete_resumable_upload_in_storage(upload_id, current_user.id)
+
+
+@router.delete("/upload/{upload_id}")
+async def delete_resumable_upload(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    return await delete_resumable_upload_in_storage(upload_id, current_user.id)
+
+
 
 
 # ============================================================================
@@ -170,11 +242,31 @@ async def send_encrypted_message(
 
         # Fetch compliance public key and process through messaging service
         compliance_key_response = await get_compliance_public_key()
-        compliance_public_key_b64 = compliance_key_response.get("public_key_b64")
-        if not compliance_public_key_b64:
+        compliance_public_key_b64 = compliance_key_response.get("public_key_b64") or ""
+        if _compliance_public_key_required() and not compliance_public_key_b64:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve compliance key"
+            )
+
+        all_transport_files: list[dict[str, object]] = [
+            {
+                "encrypted_file_data_b64": f.encrypted_file_data_b64,
+                "filename": f.filename,
+                "file_size": f.file_size,
+            }
+            for f in request.files
+        ]
+
+        for upload_id in request.uploaded_file_ids:
+            uploaded_payload = await get_resumable_upload_data_in_storage(upload_id, current_user.id)
+            all_transport_files.append(
+                {
+                    "encrypted_file_data_b64": uploaded_payload["encrypted_file_data_b64"],
+                    "filename": uploaded_payload["filename"],
+                    "file_size": uploaded_payload["file_size"],
+                    "upload_id": upload_id,
+                }
             )
 
         processed = await process_message_with_files_in_messaging_service(
@@ -184,7 +276,13 @@ async def send_encrypted_message(
             compliance_public_key_b64=compliance_public_key_b64,
             sender_public_key_b64=request.sender_public_key_b64,
             recipient_public_key_b64=request.recipient_public_key_b64,
-            transport_files=[{"encrypted_file_data_b64": f.encrypted_file_data_b64} for f in request.files],
+            transport_files=[
+                {
+                    "encrypted_file_data_b64": str(f["encrypted_file_data_b64"]),
+                    "filename": str(f.get("filename", "file")),
+                }
+                for f in all_transport_files
+            ],
         )
 
         logger.info(
@@ -213,14 +311,14 @@ async def send_encrypted_message(
         # We persist per-file nonce (for AES-GCM) but do not persist per-file wrapped MEKs.
         try:
             file_results: list[dict] = processed.get("files", []) or []
-            if len(file_results) != len(request.files):
+            if len(file_results) != len(all_transport_files):
                 raise HTTPException(status_code=500, detail="File processing count mismatch")
 
-            for i, tf in enumerate(request.files):
+            for i, tf in enumerate(all_transport_files):
                 fr = file_results[i]
                 file_storage_result = await store_encrypted_file(
                     encrypted_file_data_b64=fr["ciphertext"],
-                    filename=tf.filename,
+                    filename=str(tf["filename"]),
                     content_type="application/octet-stream",
                     sender_id=current_user.id,
                     recipient_id=request.recipient_id,
@@ -231,11 +329,17 @@ async def send_encrypted_message(
                     sender_id=current_user.id,
                     recipient_id=dm_envelope.recipient_id,
                     path=file_storage_result.get("path") or f"/uploads/files/encrypted/{file_storage_result['file_id']}",
-                    name=Path(tf.filename).name,
+                    name=Path(str(tf["filename"])).name,
                     nonce_b64=fr["nonce"],
                 )
                 db.add(df)
             db.commit()
+
+            for upload_id in request.uploaded_file_ids:
+                try:
+                    await delete_resumable_upload_in_storage(upload_id, current_user.id)
+                except Exception as cleanup_error:
+                    logger.warning("Failed to cleanup resumable upload %s: %s", upload_id, cleanup_error)
 
         except HTTPException:
             raise
@@ -257,6 +361,8 @@ async def send_encrypted_message(
         await messagingManager.send_update_to_user(dm_envelope.recipient_id, "dmNew", recipient_payload, db)
 
         sender_payload = convert_dm_envelope(db, dm_envelope, dm_envelope.sender_id)
+        if request.client_message_id:
+            sender_payload["client_message_id"] = request.client_message_id
         await messagingManager.send_update_to_user(dm_envelope.sender_id, "dmNew", sender_payload, db)
 
         return {
@@ -264,6 +370,7 @@ async def send_encrypted_message(
             "sender_id": dm_envelope.sender_id,
             "recipient_id": dm_envelope.recipient_id,
             "timestamp": dm_envelope.timestamp.isoformat(),
+            "client_message_id": request.client_message_id,
             "reply_to_id": dm_envelope.reply_to_id,
         }
 
@@ -296,47 +403,32 @@ async def extract_message_for_compliance(
     to an air-gapped machine for decryption using the compliance private key.
     """
     # Log compliance access attempt
-    client_ip = getattr(request.client, "host", "unknown") if request.client else "unknown"
-    log_security(
-        "compliance_access_attempt",
-        "warning",
-        username=current_user.username,
-        user_id=current_user.id,
-        message_id=message_id,
-        ip=client_ip,
-    )
+    client_ip = getattr(request.client, 'host', 'unknown') if request.client else 'unknown'
+    log_security("compliance_access_attempt", "warning",
+                 username=current_user.username, user_id=current_user.id,
+                 message_id=message_id, ip=client_ip)
 
     # Security check: only user ID 1 can access this
     if current_user.id != 1:
-        log_security(
-            "compliance_access_denied",
-            "error",
-            username=current_user.username,
-            user_id=current_user.id,
-            message_id=message_id,
-            ip=client_ip,
-            reason="Unauthorized user (compliance officer access required)",
-        )
+        log_security("compliance_access_denied", "error",
+                     username=current_user.username, user_id=current_user.id,
+                     message_id=message_id, ip=client_ip,
+                     reason="Unauthorized user (compliance officer access required)")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. This endpoint is restricted to compliance officers.",
+            detail="Access denied. This endpoint is restricted to compliance officers."
         )
 
     # Find the message
     envelope = db.query(DMEnvelope).filter(DMEnvelope.id == message_id).first()
     if not envelope:
-        log_security(
-            "compliance_access_failed",
-            "warning",
-            username=current_user.username,
-            user_id=current_user.id,
-            message_id=message_id,
-            ip=client_ip,
-            reason="Message not found",
-        )
+        log_security("compliance_access_failed", "warning",
+                     username=current_user.username, user_id=current_user.id,
+                     message_id=message_id, ip=client_ip,
+                     reason="Message not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Message not found",
+            detail="Message not found"
         )
 
     # Get sender and recipient usernames for logging
@@ -378,8 +470,6 @@ async def extract_message_for_compliance(
             "edited_by_username": edited_by_user.username if edited_by_user else "unknown",
             "previous_ciphertext_b64": edit_entry.previous_ciphertext_b64,
             "previous_iv_b64": edit_entry.previous_iv_b64,
-            "previous_sender_wrapped_mek_b64": edit_entry.previous_sender_wrapped_mek_b64,
-            "previous_recipient_wrapped_mek_b64": edit_entry.previous_recipient_wrapped_mek_b64,
             "previous_compliance_wrapped_mek_b64": edit_entry.previous_compliance_wrapped_mek_b64,
         })
 
@@ -396,21 +486,14 @@ async def extract_message_for_compliance(
         "total_edits": len(edit_history_data),
         "extraction_timestamp": datetime.now().isoformat(),
         "extracted_by_user_id": current_user.id,
-        "compliance_system_ready": envelope.compliance_wrapped_mek_b64 is not None,
+        "compliance_system_ready": envelope.compliance_wrapped_mek_b64 is not None
     }
 
-    log_security(
-        "compliance_extraction_success",
-        "info",
-        username=current_user.username,
-        user_id=current_user.id,
-        message_id=message_id,
-        sender_id=envelope.sender_id,
-        recipient_id=envelope.recipient_id,
-        sender_username=sender_username,
-        recipient_username=recipient_username,
-        ip=client_ip,
-    )
+    log_security("compliance_extraction_success", "info",
+                 username=current_user.username, user_id=current_user.id,
+                 message_id=message_id, sender_id=envelope.sender_id,
+                 recipient_id=envelope.recipient_id, sender_username=sender_username,
+                 recipient_username=recipient_username, ip=client_ip)
 
     return {
         "status": "success",
@@ -419,8 +502,8 @@ async def extract_message_for_compliance(
         "instructions": [
             "Transfer this data to an air-gapped machine",
             "Use compliance_decryption.py decrypt --input-file <json_file>",
-            "Keep the compliance private key offline at all times",
-        ],
+            "Keep the compliance private key offline at all times"
+        ]
     }
 
 
@@ -475,7 +558,7 @@ async def get_encrypted_conversation(
                 detail="User not found"
             )
 
-        # Fetch messages in both directions, sorted by timestamp
+        # Fetch messages in both directions, sorted by timestamp (exclude deleted)
         messages = (
             db.query(DMEnvelope)
             .filter(
@@ -486,7 +569,8 @@ async def get_encrypted_conversation(
                 | (
                     (DMEnvelope.sender_id == other_user_id)
                     & (DMEnvelope.recipient_id == current_user.id)
-                )
+                ),
+                DMEnvelope.deleted_at.is_(None)  # Exclude soft-deleted messages
             )
             .order_by(DMEnvelope.timestamp.desc())
             .limit(limit)
@@ -572,9 +656,10 @@ async def get_owner_compliance_view(
         )
 
     try:
-        # Fetch all messages
+        # Fetch all non-deleted messages
         messages = (
             db.query(DMEnvelope)
+            .filter(DMEnvelope.deleted_at.is_(None))  # Exclude soft-deleted messages
             .order_by(DMEnvelope.timestamp.desc())
             .all()
         )
@@ -679,8 +764,6 @@ async def get_dm_edit_history_for_compliance(
                 "dm_envelope_id": entry.message_id,
                 "previous_ciphertext_b64": entry.previous_ciphertext_b64,
                 "previous_iv_b64": entry.previous_iv_b64,
-                "previous_sender_wrapped_mek_b64": entry.previous_sender_wrapped_mek_b64,
-                "previous_recipient_wrapped_mek_b64": entry.previous_recipient_wrapped_mek_b64,
                 "previous_compliance_wrapped_mek_b64": entry.previous_compliance_wrapped_mek_b64,
                 "edited_at": entry.edited_at.isoformat(),
                 "edited_by_username": edited_by_user.username if edited_by_user else "unknown",
@@ -757,7 +840,10 @@ async def edit_encrypted_message(
     """
     try:
         # Find the message
-        msg = db.query(DMEnvelope).filter(DMEnvelope.id == message_id).first()
+        msg = db.query(DMEnvelope).filter(
+            DMEnvelope.id == message_id,
+            DMEnvelope.deleted_at.is_(None)  # Can't edit deleted messages
+        ).first()
         if not msg:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -773,8 +859,8 @@ async def edit_encrypted_message(
 
         # Fetch compliance public key and process through messaging service
         compliance_key_response = await get_compliance_public_key()
-        compliance_public_key_b64 = compliance_key_response.get("public_key_b64")
-        if not compliance_public_key_b64:
+        compliance_public_key_b64 = compliance_key_response.get("public_key_b64") or ""
+        if _compliance_public_key_required() and not compliance_public_key_b64:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve compliance key"
@@ -791,22 +877,11 @@ async def edit_encrypted_message(
             transport_files=[],  # No file support for edits currently
         )
 
-        # Store edit history in compliance storage before updating
-        edit_history = DMEditHistory(
-            message_id=msg.id,
-            dm_envelope_id=msg.id,  # Match existing DB schema
-            previous_ciphertext_b64=msg.ciphertext_b64,
-            previous_iv_b64=msg.iv_b64,
-            previous_sender_wrapped_mek_b64=msg.sender_wrapped_mek_b64,
-            previous_recipient_wrapped_mek_b64=msg.recipient_wrapped_mek_b64,
-            previous_compliance_wrapped_mek_b64=msg.compliance_wrapped_mek_b64 or "",
-            edited_by=current_user.id,
-            edited_by_user_id=current_user.id  # Match existing DB schema
-        )
-        db.add(edit_history)
-
-        # Update the message with new processed content
+        # Update the message with new processed content (commit first so edit always succeeds)
         processed_msg = processed["message"]
+        prev_ciphertext = msg.ciphertext_b64
+        prev_iv = msg.iv_b64
+        prev_wrapped_mek = msg.compliance_wrapped_mek_b64 or ""
         msg.ciphertext_b64 = processed_msg["ciphertext"]
         msg.iv_b64 = processed_msg["nonce"]
         msg.sender_wrapped_mek_b64 = processed["sender_wrapped_mek"]
@@ -816,6 +891,26 @@ async def edit_encrypted_message(
 
         db.commit()
         db.refresh(msg)
+
+        # Best-effort: store edit history for compliance (table may not exist yet)
+        try:
+            edit_history = DMEditHistory(
+                message_id=msg.id,
+                dm_envelope_id=msg.id,
+                previous_ciphertext_b64=prev_ciphertext,
+                previous_iv_b64=prev_iv,
+                previous_compliance_wrapped_mek_b64=prev_wrapped_mek,
+                edited_by=current_user.id,
+                edited_by_user_id=current_user.id,
+            )
+            db.add(edit_history)
+            db.commit()
+        except Exception as history_err:
+            db.rollback()
+            logger.warning(
+                "Could not store DM edit history (table dm_edit_history may not exist): %s",
+                history_err,
+            )
 
         logger.info(
             "Edited encrypted message msg_id=%s by user_id=%s",
@@ -884,7 +979,9 @@ async def delete_encrypted_message(
                 detail="Cannot delete others' messages"
             )
 
-        db.delete(msg)
+        # Soft delete: set deleted_at timestamp instead of hard delete
+        from datetime import datetime
+        msg.deleted_at = datetime.now()
         db.commit()
 
         logger.info(
