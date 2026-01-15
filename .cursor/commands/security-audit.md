@@ -8,7 +8,6 @@ Perform a comprehensive security audit of the FromChat application codebase.
 
 - React/TypeScript frontend
 - Python FastAPI backend
-- End-to-end encryption for DMs and calls
 - Caddy reverse proxy with security headers
 - WebSocket support for real-time features
 - Electron support for desktop app
@@ -122,7 +121,7 @@ Provide a **clean, concise report** with:
 - CORS configuration in backend/app.py
 - Password validation in backend/validation.py
 - JWT token generation and validation
-- E2E encryption implementation (NaCl, AES-GCM)
+- Encryption implementation (NaCl, AES-GCM)
 - File upload sanitization
 - Authorization checks on sensitive endpoints
 - Rate limiting configuration

@@ -40,18 +40,8 @@ export async function decrypt(envelope: DmEnvelope, userId?: number): Promise<st
         const wrappedMekB64 = envelope.wrapped_mek_b64;
         if (!wrappedMekB64) throw new Error("No wrapped MEK available for decryption");
 
-        console.log("🔐 Decrypting DM envelope:", {
-            id: envelope.id,
-            senderId: envelope.senderId,
-            recipientId: envelope.recipientId,
-            hasWrappedMek: !!wrappedMekB64,
-            wrappedMekLength: wrappedMekB64?.length
-        });
-
         // Unwrap the MEK using shared logic
         const mek = await unwrapMek(wrappedMekB64, envelope, userId);
-
-        console.log("🔓 MEK unwrapped successfully, length:", mek.length);
 
         // Decrypt the message using the unwrapped MEK
         // Server encrypts with AES-GCM, so client decrypts with AES-GCM
@@ -60,15 +50,9 @@ export async function decrypt(envelope: DmEnvelope, userId?: number): Promise<st
         const messageNonce = ub64(envelope.iv_b64 || "");
         const messageCiphertext = ub64(envelope.ciphertext_b64);
 
-        console.log("💬 Message decryption with AES-GCM:", {
-            ivLength: messageNonce.length,
-            ciphertextLength: messageCiphertext.length
-        });
-
         const plaintext = await aesGcmDecrypt(messageKey, messageNonce, messageCiphertext);
         const result = new TextDecoder().decode(plaintext);
 
-        console.log("✅ Decryption successful:", result);
         return result;
     } catch (error) {
         console.error("❌ Failed to decrypt DM envelope:", error);

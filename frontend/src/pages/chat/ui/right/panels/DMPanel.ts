@@ -55,12 +55,6 @@ export class DMPanel extends MessagePanel {
     }
 
     private async parseTextPayload(env: DmEnvelope, decryptedMessages: Message[]) {
-        console.log("🔔 DMPanel parsing message:", {
-            envelopeId: env.id,
-            currentUserId: this.currentUser.currentUser?.id,
-            envelopeRecipientId: env.recipientId,
-            envelopeSenderId: env.senderId
-        });
         const plaintext = await api.chats.dm.decrypt(env, this.currentUser.currentUser?.id);
         const username = formatDMUsername(
             env.senderId,
@@ -258,34 +252,37 @@ export class DMPanel extends MessagePanel {
             }
         }
         if (response.type === "dmEdited" && this.dmData) {
-            const { id, iv, ciphertext, wrappedMk } = response.data;
-            try {
-                // Decrypt new content in-place
-                const plaintext = await api.chats.dm.decrypt(
-                    {
-                        id,
-                        senderId: 0,
-                        recipientId: 0,
-                        iv_b64: iv,
-                        ciphertext_b64: ciphertext,
-                        wrapped_mek_b64: wrappedMk,
-                        timestamp: new Date().toISOString()
-                    },
-                    this.currentUser.currentUser?.id
-                );
-                let content = plaintext;
-                let files: Message["files"] | undefined = undefined;
-                try {
-                    const obj = JSON.parse(plaintext) as EncryptedMessageJson;
-                    if (obj.type === "text" && obj.data) {
-                        content = obj.data.content;
-                        files = obj.data.files;
-                    }
-                } catch {}
-                const updates: Partial<Message> = { content, is_edited: true, files };
-                this.updateMessage(id, updates);
-            } catch (e) {
+            const { id, senderId, recipientId, iv_b64, ciphertext_b64, wrapped_mek_b64, timestamp } = response.data;
+            if (!wrapped_mek_b64) {
                 this.updateMessage(id, { is_edited: true });
+            } else {
+                try {
+                    const plaintext = await api.chats.dm.decrypt(
+                        {
+                            id,
+                            senderId: senderId ?? 0,
+                            recipientId: recipientId ?? 0,
+                            iv_b64: iv_b64 ?? "",
+                            ciphertext_b64: ciphertext_b64 ?? "",
+                            wrapped_mek_b64,
+                            timestamp: timestamp ?? new Date().toISOString()
+                        },
+                        this.currentUser.currentUser?.id
+                    );
+                    let content = plaintext;
+                    let files: Message["files"] | undefined = undefined;
+                    try {
+                        const obj = JSON.parse(plaintext) as EncryptedMessageJson;
+                        if (obj.type === "text" && obj.data) {
+                            content = obj.data.content;
+                            files = obj.data.files;
+                        }
+                    } catch {}
+                    const updates: Partial<Message> = { content, is_edited: true, files };
+                    this.updateMessage(id, updates);
+                } catch (e) {
+                    this.updateMessage(id, { is_edited: true });
+                }
             }
         }
         if (response.type === "dmDeleted" && this.dmData) {

@@ -1,7 +1,7 @@
 import os
 
-# Database is always in backend/data/ relative to project root
-DATABASE_URL = "sqlite:///" + os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "database.db")
+# Database URL from environment (Docker) or fallback to SQLite (development)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///" + os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "database.db"))
 JWT_ALGORITHM = "HS256"
 # Token inactivity expiration - token expires if not used for this duration
 TOKEN_INACTIVITY_EXPIRE_HOURS = 30 * 24  # 30 days of inactivity

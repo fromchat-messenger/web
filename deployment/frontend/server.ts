@@ -5,6 +5,7 @@ import { resolve } from 'path';
 const app = express();
 const port = process.env.PORT || 3000;
 const backendHost = process.env.BACKEND_HOST || "http://localhost:8300";
+const fileStorageHost = process.env.FILE_STORAGE_HOST || "http://localhost:8302";
 const filePath = process.env.STATIC_FILE_PATH || ".";
 
 // API proxy middleware
@@ -13,6 +14,12 @@ app.use('/api', createProxyMiddleware({
     changeOrigin: true,
     pathRewrite: { '^/api': '' },
     ws: true
+}));
+
+// File serving proxy middleware
+app.use('/uploads/files', createProxyMiddleware({
+    target: fileStorageHost,
+    changeOrigin: true
 }));
 
 // Serve static files

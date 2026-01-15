@@ -7,6 +7,7 @@ import subprocess
 import sys
 import os
 import logging
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 # Import from same directory
 from .routes import account, messaging, profile, push, webrtc, devices, moderation, download, keys, envelope_messaging
@@ -166,18 +167,55 @@ if not _running_in_docker():
         logger.warning(f"Failed to mount internal services for development: {e}")
 
 
+def _get_username_for_log(user) -> str | None:
+    """
+    Safely extract username for access logs.
+
+    If the ORM instance is detached, we transparently open a short-lived session,
+    reload the user by ID and read the username from that fresh instance.
+    Logging must never break request handling.
+    """
+    if user is None:
+        return None
+
+    # Fast path: instance is still bound to a session.
+    try:
+        return getattr(user, "username", None)
+    except DetachedInstanceError:
+        # Session is gone; try to reload user by primary key.
+        try:
+            user_id = getattr(user, "id", None)
+        except Exception:
+            user_id = None
+
+        if not user_id:
+            return None
+
+        try:
+            with SessionLocal() as db:
+                fresh = db.query(User).filter(User.id == user_id).first()
+                return getattr(fresh, "username", None) if fresh is not None else None
+        except Exception:
+            return None
+    except Exception:
+        # Fall back to no user information if anything else goes wrong.
+        return None
+
+
 @app.middleware("http")
 async def access_logging_middleware(request: Request, call_next):
     # Log incoming request and Authorization header presence for debugging auth issues
-    try:
-        auth_header = request.headers.get("authorization")
-        if auth_header:
-            short = auth_header[:20] + "..." if len(auth_header) > 20 else auth_header
-            logger.info("Incoming request %s %s Authorization=%s", request.method, request.url.path, short)
-        else:
-            logger.info("Incoming request %s %s Authorization=NONE", request.method, request.url.path)
-    except Exception:
-        pass
+    # Skip logging for health check requests
+    if request.url.path != "/health":
+        try:
+            auth_header = request.headers.get("authorization")
+            if auth_header:
+                short = auth_header[:20] + "..." if len(auth_header) > 20 else auth_header
+                logger.info("Incoming request %s %s Authorization=%s", request.method, request.url.path, short)
+            else:
+                logger.info("Incoming request %s %s Authorization=NONE", request.method, request.url.path)
+        except Exception:
+            pass
     start = time.perf_counter()
     try:
         response = await call_next(request)
@@ -189,7 +227,7 @@ async def access_logging_middleware(request: Request, call_next):
             method=request.method,
             path=request.url.path,
             status="error",
-            user=getattr(user, "username", None),
+            user=_get_username_for_log(user),
             ip=get_client_ip(request),
             duration=f"{duration:.3f}s",
             error=str(exc),
@@ -203,7 +241,7 @@ async def access_logging_middleware(request: Request, call_next):
             method=request.method,
             path=request.url.path,
             status=response.status_code,
-            user=getattr(user, "username", None),
+            user=_get_username_for_log(user),
             ip=get_client_ip(request),
             duration=f"{duration:.3f}s",
         )
@@ -252,6 +290,12 @@ app.include_router(download.router)
 app.include_router(keys.router)
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker health checks."""
+    return {"status": "healthy", "service": "main"}
+
+
 @app.get("/key/public")
 async def key_public_proxy():
     """
@@ -261,9 +305,7 @@ async def key_public_proxy():
     return await keys.get_public_key()
 
 
-@app.post("/key/invalidate")
-async def key_invalidate_proxy():
-    """
-    Proxy endpoint to invalidate messaging ephemeral key.
-    """
-    return await keys.invalidate_key()
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8300"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

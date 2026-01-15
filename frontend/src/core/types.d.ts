@@ -319,11 +319,9 @@ export interface DMEditPayload {
     id: number;
     senderId: number;
     recipientId: number;
-    iv: string;
-    ciphertext: string;
-    iv2: string;
-    wrappedMk: string;
-    salt: string;
+    iv_b64: string;
+    ciphertext_b64: string;
+    wrapped_mek_b64: string;
     timestamp: string;
 }
 

@@ -386,7 +386,6 @@ async def process_message_with_files_http(request: ProcessMessageWithFilesReques
         logger.exception("Failed to process message with files: %s", e)
         raise
 
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8301"))

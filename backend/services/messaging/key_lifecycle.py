@@ -6,7 +6,7 @@ on message deletion, and configurable retention policies for cryptographic keys.
 
 Key Features:
 - Automatic compliance key destruction (default: 6 months)
-- Selective key destruction on message deletion
+- Selective key destruction on message deletion (default: 6 months)
 - Configurable retention policies
 - Background cleanup jobs for expired keys
 """
@@ -24,7 +24,7 @@ logger = logging.getLogger("uvicorn.error")
 
 # Default retention periods (in days)
 DEFAULT_COMPLIANCE_KEY_RETENTION_DAYS = 180  # 6 months
-DEFAULT_MESSAGE_KEY_RETENTION_DAYS = 30      # 30 days for deleted messages
+DEFAULT_MESSAGE_KEY_RETENTION_DAYS = 180     # 6 months for deleted messages
 
 # Environment variable overrides
 COMPLIANCE_KEY_RETENTION_DAYS = int(os.getenv("COMPLIANCE_KEY_RETENTION_DAYS", DEFAULT_COMPLIANCE_KEY_RETENTION_DAYS))
@@ -147,7 +147,8 @@ def cleanup_expired_message_keys(db: Session) -> int:
     Clean up message keys for deleted messages after retention period.
 
     This removes sender and recipient wrapped keys from DM envelopes that have been
-    deleted and are past the retention period, making them completely inaccessible.
+    soft-deleted and are past the retention period, making them completely inaccessible
+    except through compliance access (which preserves the compliance key).
 
     Args:
         db: Database session
@@ -156,16 +157,45 @@ def cleanup_expired_message_keys(db: Session) -> int:
         Number of keys destroyed
     """
     try:
-        # Note: We don't have a direct "deleted" flag on DMEnvelope, so this would need
-        # to be implemented when message deletion is added. For now, this is a placeholder.
+        from datetime import datetime, timedelta
+        from ..main.models import DMEnvelope
 
-        # This would typically work with a deletion timestamp or flag on the envelope
-        # For now, return 0 as we don't have deleted message tracking yet
-        logger.info("Message key cleanup: No deleted messages to process")
-        return 0
+        # Calculate cutoff date for expired messages
+        cutoff_date = datetime.now() - get_message_key_retention_period()
+
+        # Find soft-deleted messages past retention period
+        expired_messages = db.query(DMEnvelope).filter(
+            DMEnvelope.deleted_at.is_not(None),
+            DMEnvelope.deleted_at < cutoff_date
+        ).all()
+
+        if not expired_messages:
+            logger.info("Message key cleanup: No expired deleted messages to process")
+            return 0
+
+        keys_destroyed = 0
+
+        for message in expired_messages:
+            # Destroy sender and recipient keys (compliance key remains for legal access)
+            message.sender_wrapped_mek_b64 = ""
+            message.recipient_wrapped_mek_b64 = ""
+            keys_destroyed += 2
+
+            logger.info(
+                "Destroyed keys for soft-deleted message id=%s (deleted %s)",
+                message.id,
+                message.deleted_at.isoformat()
+            )
+
+        db.commit()
+        logger.info("Message key cleanup: Destroyed %d keys across %d messages",
+                   keys_destroyed, len(expired_messages))
+
+        return keys_destroyed
 
     except Exception as e:
         logger.error(f"Failed to cleanup expired message keys: {e}")
+        db.rollback()
         return 0
 
 

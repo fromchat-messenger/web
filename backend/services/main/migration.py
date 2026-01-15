@@ -69,6 +69,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def _ensure_all_model_tables():
+    """Create any model tables that do not exist (e.g. dm_edit_history added after migrations)."""
+    engine = _create_engine_with_retry()
+    Base = _load_models_base()
+    Base.metadata.create_all(bind=engine)
+    logger.info("Ensured all model tables exist.")
+
+
 def run_migrations():
     """
     Run database migrations using Alembic.
@@ -128,7 +137,14 @@ def run_migrations():
             engine = _create_engine_with_retry()
             with engine.connect() as connection:
                 from sqlalchemy import text
-                result = connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name != 'alembic_version'"))
+                # Check for PostgreSQL or SQLite
+                if 'postgresql' in DATABASE_URL.lower():
+                    result = connection.execute(text("""
+                        SELECT tablename as name FROM pg_tables
+                        WHERE schemaname = 'public' AND tablename != 'alembic_version'
+                    """))
+                else:
+                    result = connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name != 'alembic_version'"))
                 existing_tables = result.fetchall()
                 
                 if existing_tables:
@@ -204,6 +220,7 @@ def run_migrations():
         try:
             command.upgrade(alembic_cfg, "head")
             logger.info("Database migrations completed successfully.")
+            _ensure_all_model_tables()
         except Exception as upgrade_error:
             if "Can't locate revision identified by 'direct_creation'" in str(upgrade_error):
                 logger.info("Found 'direct_creation' revision - resetting migration state...")
@@ -237,6 +254,7 @@ def run_migrations():
                 # Try upgrade again
                 command.upgrade(alembic_cfg, "head")
                 logger.info("Database migrations completed successfully after reset.")
+                _ensure_all_model_tables()
             elif "no such table" in str(upgrade_error).lower():
                 logger.info("Database tables missing - resetting migration state...")
                 # Clear the alembic_version table and start fresh
@@ -249,6 +267,7 @@ def run_migrations():
                 # Try upgrade again
                 command.upgrade(alembic_cfg, "head")
                 logger.info("Database migrations completed successfully after reset.")
+                _ensure_all_model_tables()
             else:
                 raise upgrade_error
         
@@ -286,6 +305,7 @@ def run_migrations():
                 
                 # Try upgrade again
                 command.upgrade(alembic_cfg, "head")
+                _ensure_all_model_tables()
                 logger.info("Automated recovery completed successfully.")
             else:
                 # No migration files, create fresh ones
@@ -294,6 +314,7 @@ def run_migrations():
                 
                 # Run the migration
                 command.upgrade(alembic_cfg, "head")
+                _ensure_all_model_tables()
                 logger.info("Automated recovery completed successfully.")
             
         except Exception as recovery_error:
@@ -600,6 +621,8 @@ def _create_database_directly():
                 else:
                     # Table doesn't exist, create it
                     logger.info(f"Creating table {table_name}")
+                    from sqlalchemy.schema import CreateTable
+                    connection.execute(CreateTable(Base.metadata.tables[table_name]))
         
         # Create alembic_version table manually
         connection.execute(text("""
@@ -623,29 +646,45 @@ def _create_database_directly():
                 revision_match = re.search(r"revision: str = '([^']+)'", content)
                 if revision_match:
                     revision_id = revision_match.group(1)
-                    connection.execute(text(f"INSERT OR IGNORE INTO alembic_version (version_num) VALUES ('{revision_id}')"))
+                    if 'postgresql' in DATABASE_URL.lower():
+                        connection.execute(text(f"INSERT INTO alembic_version (version_num) VALUES ('{revision_id}') ON CONFLICT DO NOTHING"))
+                    else:
+                        connection.execute(text(f"INSERT OR IGNORE INTO alembic_version (version_num) VALUES ('{revision_id}')"))
                 else:
-                    connection.execute(text("INSERT OR IGNORE INTO alembic_version (version_num) VALUES ('direct_creation')"))
+                    if 'postgresql' in DATABASE_URL.lower():
+                        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('direct_creation') ON CONFLICT DO NOTHING"))
+                    else:
+                        connection.execute(text("INSERT OR IGNORE INTO alembic_version (version_num) VALUES ('direct_creation')"))
         else:
-            connection.execute(text("INSERT OR IGNORE INTO alembic_version (version_num) VALUES ('direct_creation')"))
+            if 'postgresql' in DATABASE_URL.lower():
+                connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('direct_creation') ON CONFLICT DO NOTHING"))
+            else:
+                connection.execute(text("INSERT OR IGNORE INTO alembic_version (version_num) VALUES ('direct_creation')"))
         
         connection.commit()
 
 
 def _get_sql_type(column):
     """Get SQL type for direct SQL execution."""
-    type_name = column.type.__class__.__name__
-    
-    if type_name == 'String':
-        return f"VARCHAR({column.type.length})"
-    elif type_name == 'Integer':
+    from sqlalchemy import String, Integer, Text, Boolean, DateTime
+    import os
+
+    # Check if we're using PostgreSQL
+    is_postgres = 'postgresql' in os.getenv('DATABASE_URL', '').lower()
+
+    if isinstance(column.type, String):
+        if column.type.length:
+            return f"VARCHAR({column.type.length})"
+        else:
+            return "TEXT"
+    elif isinstance(column.type, Integer):
         return "INTEGER"
-    elif type_name == 'Text':
+    elif isinstance(column.type, Text):
         return "TEXT"
-    elif type_name == 'Boolean':
+    elif isinstance(column.type, Boolean):
         return "BOOLEAN"
-    elif type_name == 'DateTime':
-        return "DATETIME"
+    elif isinstance(column.type, DateTime):
+        return "TIMESTAMP" if is_postgres else "DATETIME"
     else:
         return "TEXT"  # fallback
 

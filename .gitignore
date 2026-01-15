@@ -581,3 +581,5 @@ backend/alembic/**
 tmp
 compliance_keypair.txt
 backend/files
+*.db-wal
+*.db-shm

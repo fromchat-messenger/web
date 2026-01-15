@@ -171,6 +171,8 @@ async def store_encrypted_file(
     encrypted_file_data_b64: str,
     filename: str,
     content_type: str = "application/octet-stream",
+    sender_id: int = None,
+    recipient_id: int = None,
     timeout: float = 30.0,
 ) -> Dict[str, Any]:
     """
@@ -205,10 +207,17 @@ async def store_encrypted_file(
     try:
         try:
             import httpx
+            allowed_user_ids = []
+            if sender_id is not None:
+                allowed_user_ids.append(sender_id)
+            if recipient_id is not None:
+                allowed_user_ids.append(recipient_id)
+
             payload = {
                 "filename": filename,
                 "data_b64": encrypted_file_data_b64,
                 "content_type": content_type,
+                "allowed_user_ids": allowed_user_ids,
             }
             async with httpx.AsyncClient(timeout=timeout) as client:
                 r = await client.post(url, json=payload)
@@ -216,10 +225,17 @@ async def store_encrypted_file(
                 return r.json()
         except Exception:
             from urllib import request
+            allowed_user_ids = []
+            if sender_id is not None:
+                allowed_user_ids.append(sender_id)
+            if recipient_id is not None:
+                allowed_user_ids.append(recipient_id)
+
             payload = {
                 "filename": filename,
                 "data_b64": encrypted_file_data_b64,
                 "content_type": content_type,
+                "allowed_user_ids": allowed_user_ids,
             }
             req = request.Request(url, method="POST")
             req.data = json.dumps(payload).encode("utf-8")

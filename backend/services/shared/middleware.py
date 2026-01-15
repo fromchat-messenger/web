@@ -5,6 +5,7 @@ Provides:
 - Request size limiting (max 5GB)
 - Input validation and sanitization
 - Comprehensive audit logging
+- Health check access log filtering
 """
 
 import logging
@@ -15,6 +16,16 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 logger = logging.getLogger("uvicorn.error")
+access_logger = logging.getLogger("uvicorn.access")
+
+
+class HealthCheckFilter(logging.Filter):
+    """Filter to suppress access logs for health check requests."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Return False to suppress logs containing health check requests."""
+        message = record.getMessage()
+        return "GET /health HTTP/" not in message
 
 # Maximum request size: 5GB
 MAX_REQUEST_SIZE = 5 * 1024 * 1024 * 1024  # 5GB in bytes
@@ -48,61 +59,17 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class AuditLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware for comprehensive audit logging of all requests."""
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Log request and response details."""
-        start_time = time.time()
-        
-        # Log request
-        client_ip = request.client.host if request.client else "unknown"
-        method = request.method
-        path = request.url.path
-        
-        logger.info(
-            "REQUEST: %s %s from %s",
-            method,
-            path,
-            client_ip,
-        )
-
-        try:
-            response = await call_next(request)
-            
-            # Log response
-            duration = time.time() - start_time
-            logger.info(
-                "RESPONSE: %s %s -> %d in %.2fms",
-                method,
-                path,
-                response.status_code,
-                duration * 1000,
-            )
-            
-            return response
-            
-        except Exception as e:
-            duration = time.time() - start_time
-            logger.exception(
-                "ERROR: %s %s failed after %.2fms: %s",
-                method,
-                path,
-                duration * 1000,
-                e,
-            )
-            raise
+# Apply health check filter to access logger
+if not any(isinstance(f, HealthCheckFilter) for f in access_logger.filters):
+    access_logger.addFilter(HealthCheckFilter())
 
 
 def add_security_middleware(app: FastAPI):
     """
     Add all security and audit middleware to FastAPI app.
-    
+
     Args:
         app: FastAPI application instance
     """
     # Request size limiting (inner, checked first)
     app.add_middleware(RequestSizeLimitMiddleware)
-    
-    # Audit logging (outer, logs everything)
-    app.add_middleware(AuditLoggingMiddleware)

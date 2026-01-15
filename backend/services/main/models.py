@@ -86,6 +86,7 @@ class DMEnvelope(Base):
     timestamp = Column(DateTime, default=datetime.now)
     is_edited = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
+    deleted_at = Column(DateTime, nullable=True)  # Soft delete timestamp
     files = relationship("DMFile", back_populates="message", cascade="all, delete-orphan", lazy="select")
     reactions = relationship("DMReaction", cascade="all, delete-orphan", lazy="select")
 
@@ -241,8 +242,6 @@ class DMEditHistoryResponse(BaseModel):
     dm_envelope_id: int
     previous_ciphertext_b64: str
     previous_iv_b64: str
-    previous_sender_wrapped_mek_b64: str
-    previous_recipient_wrapped_mek_b64: str
     previous_compliance_wrapped_mek_b64: str
     edited_at: str
     edited_by_username: str
@@ -374,8 +373,6 @@ class DMEditHistory(Base):
     dm_envelope_id = Column(Integer, ForeignKey("dm_envelope.id"), nullable=False)  # Match existing DB schema
     previous_ciphertext_b64 = Column(Text, nullable=False)  # Encrypted content before this edit
     previous_iv_b64 = Column(Text, nullable=False)  # IV for previous content
-    previous_sender_wrapped_mek_b64 = Column(Text, nullable=False)  # MEK wrapped for sender before edit
-    previous_recipient_wrapped_mek_b64 = Column(Text, nullable=False)  # MEK wrapped for recipient before edit
     previous_compliance_wrapped_mek_b64 = Column(Text, nullable=False)  # MEK wrapped for compliance before edit
     edited_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     edited_by = Column(Integer, ForeignKey("user.id"), nullable=False)  # Match existing DB schema
