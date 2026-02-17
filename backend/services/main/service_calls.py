@@ -187,15 +187,22 @@ async def store_encrypted_file(
         }
     """
     mod = _get_file_storage_module()
+    # Build allowed users list once for both in-process and HTTP modes
+    allowed_user_ids: list[int] = []
+    if sender_id is not None:
+        allowed_user_ids.append(sender_id)
+    if recipient_id is not None:
+        allowed_user_ids.append(recipient_id)
+
     if mod:
         try:
-            # In-process: call the upload-base64 endpoint directly
-            return await mod.upload_base64_file(
-                None,  # request - not needed for in-process
+            # In-process: call internal function directly
+            return await mod.upload_base64_internal(
                 filename=filename,
                 data_b64=encrypted_file_data_b64,
                 content_type=content_type,
-            )  # type: ignore
+                allowed_user_ids=allowed_user_ids,
+            )
         except Exception as e:
             logger.error("In-process file_storage.store_encrypted_file failed: %s", e)
             raise
@@ -207,11 +214,6 @@ async def store_encrypted_file(
     try:
         try:
             import httpx
-            allowed_user_ids = []
-            if sender_id is not None:
-                allowed_user_ids.append(sender_id)
-            if recipient_id is not None:
-                allowed_user_ids.append(recipient_id)
 
             payload = {
                 "filename": filename,
@@ -225,11 +227,6 @@ async def store_encrypted_file(
                 return r.json()
         except Exception:
             from urllib import request
-            allowed_user_ids = []
-            if sender_id is not None:
-                allowed_user_ids.append(sender_id)
-            if recipient_id is not None:
-                allowed_user_ids.append(recipient_id)
 
             payload = {
                 "filename": filename,
@@ -396,7 +393,7 @@ async def process_message_with_files_in_messaging_service(
                 compliance_public_key_b64=compliance_public_key_b64,
                 sender_public_key_b64=sender_public_key_b64,
                 recipient_public_key_b64=recipient_public_key_b64,
-                files=[f["encrypted_file_data_b64"] for f in transport_files],
+                transport_files=transport_files,
             )
         except Exception as e:
             logger.error("In-process messaging.process_message_with_files failed: %s", e)
@@ -422,5 +419,165 @@ async def process_message_with_files_in_messaging_service(
     except Exception as e:
         logger.error("Failed to process message+files in messaging service: %s", e)
         raise
+
+
+async def init_resumable_upload_in_storage(
+    filename: str,
+    total_size: int,
+    allowed_user_ids: list[int],
+    chunk_size: int | None = None,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.init_resumable_upload_internal(
+                filename=filename,
+                total_size=total_size,
+                allowed_user_ids=allowed_user_ids,
+                chunk_size=chunk_size,
+            )
+        except Exception as e:
+            logger.error("In-process file_storage.init_resumable_upload failed: %s", e)
+            raise
+
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    url = f"{file_storage_url.rstrip('/')}/uploads/resumable/init"
+    payload = {
+        "filename": filename,
+        "total_size": total_size,
+        "allowed_user_ids": allowed_user_ids,
+    }
+    if chunk_size is not None:
+        payload["chunk_size"] = chunk_size
+
+    import httpx
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(url, json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
+async def get_resumable_upload_status_in_storage(
+    upload_id: str,
+    user_id: int,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.get_resumable_upload_status_internal(upload_id, user_id)
+        except Exception as e:
+            logger.error("In-process file_storage.get_resumable_upload_status failed: %s", e)
+            raise
+
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}"
+
+    import httpx
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.get(url, headers={"X-User-ID": str(user_id)})
+        r.raise_for_status()
+        return r.json()
+
+
+async def upload_resumable_chunk_in_storage(
+    upload_id: str,
+    user_id: int,
+    offset: int,
+    data_b64: str,
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.upload_resumable_chunk_internal(
+                upload_id, user_id, offset, data_b64
+            )
+        except Exception as e:
+            logger.error("In-process file_storage.upload_resumable_chunk failed: %s", e)
+            raise
+
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}"
+    payload = {
+        "offset": offset,
+        "data_b64": data_b64,
+    }
+
+    import httpx
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.patch(url, json=payload, headers={"X-User-ID": str(user_id)})
+        r.raise_for_status()
+        return r.json()
+
+
+async def complete_resumable_upload_in_storage(
+    upload_id: str,
+    user_id: int,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.complete_resumable_upload_internal(upload_id, user_id)
+        except Exception as e:
+            logger.error("In-process file_storage.complete_resumable_upload failed: %s", e)
+            raise
+
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}/complete"
+
+    import httpx
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(url, json={"upload_id": upload_id}, headers={"X-User-ID": str(user_id)})
+        r.raise_for_status()
+        return r.json()
+
+
+async def get_resumable_upload_data_in_storage(
+    upload_id: str,
+    user_id: int,
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.get_resumable_upload_data_internal(upload_id, user_id)
+        except Exception as e:
+            logger.error("In-process file_storage.get_resumable_upload_data failed: %s", e)
+            raise
+
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}/data-b64"
+
+    import httpx
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.get(url, headers={"X-User-ID": str(user_id)})
+        r.raise_for_status()
+        return r.json()
+
+
+async def delete_resumable_upload_in_storage(
+    upload_id: str,
+    user_id: int,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.delete_resumable_upload_internal(upload_id, user_id)
+        except Exception as e:
+            logger.error("In-process file_storage.delete_resumable_upload failed: %s", e)
+            raise
+
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}"
+
+    import httpx
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.delete(url, headers={"X-User-ID": str(user_id)})
+        r.raise_for_status()
+        return r.json()
 
 

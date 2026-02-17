@@ -163,8 +163,8 @@ if not _running_in_docker():
         app.mount("/internal/file_storage", file_storage_service_module.app)
         logger.info("Mounted messaging and file_storage services in development mode")
     except Exception as e:
-        # If mounting fails, continue without blocking startup; log for debugging
-        logger.warning(f"Failed to mount internal services for development: {e}")
+        import traceback
+        logger.warning("Failed to mount internal services for development: %s\n%s", e, traceback.format_exc())
 
 
 def _get_username_for_log(user) -> str | None:

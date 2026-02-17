@@ -187,6 +187,7 @@ class ProcessMessageWithFilesFile(BaseModel):
     A single transport-encrypted file blob (base64 of nonce||ciphertext).
     """
     encrypted_file_data_b64: str
+    filename: str = "file"
 
 
 class ProcessMessageWithFilesRequest(ProcessMessageRequest):
@@ -200,13 +201,13 @@ class ProcessMessageWithFilesRequest(ProcessMessageRequest):
 # Health Checks
 # ============================================================================
 
-@app.get("/health")
+@app.get("/health", response_model=None)
 async def health_check():
     """Health check endpoint for messaging service."""
     return {"status": "healthy", "service": "messaging"}
 
 
-@app.get("/")
+@app.get("/", response_model=None)
 async def root():
     """Root endpoint for messaging service."""
     return {"message": "FromChat Messaging Service", "status": "operational"}
@@ -216,7 +217,7 @@ async def root():
 # Ephemeral Key Endpoints
 # ============================================================================
 
-@app.get("/key/transport/public")
+@app.get("/key/transport/public", response_model=None)
 async def get_transport_public_key():
     """
     Return the current ephemeral transport public key for client-side message encryption.
@@ -304,7 +305,7 @@ async def process_message(
         raise
 
 
-@app.post("/process")
+@app.post("/process", response_model=None)
 async def process_message_http(request: ProcessMessageRequest):
     """
     HTTP endpoint for processing encrypted messages.
@@ -328,10 +329,11 @@ async def process_message_with_files(
     compliance_public_key_b64: str,
     sender_public_key_b64: str,
     recipient_public_key_b64: str,
-    files: list[str],
+    transport_files: list[dict],
 ):
     """
     In-process helper: process message + transport-encrypted files with one MEK.
+    transport_files: list of {"encrypted_file_data_b64": str, "filename": str}
     """
     private_key = _get_ephemeral_private_key()
 
@@ -343,8 +345,10 @@ async def process_message_with_files(
     )
 
     plaintext_files: list[bytes] = []
-    for encrypted_file_data_b64 in files:
-        transport_blob = base64.b64decode(encrypted_file_data_b64)
+    filenames: list[str] = []
+    for tf in transport_files:
+        enc_b64 = tf.get("encrypted_file_data_b64", "")
+        transport_blob = base64.b64decode(enc_b64)
         plaintext_files.append(
             decrypt_transport_blob(
                 client_public_key_b64=sender_public_key_b64,
@@ -352,17 +356,19 @@ async def process_message_with_files(
                 ephemeral_private_key=private_key,
             )
         )
+        filenames.append(tf.get("filename", "file"))
 
     return process_encrypted_message_and_files(
         plaintext_message=plaintext_message,
         plaintext_files=plaintext_files,
+        filenames=filenames,
         compliance_public_key_b64=compliance_public_key_b64,
         sender_public_key_b64=sender_public_key_b64,
         recipient_public_key_b64=recipient_public_key_b64,
     )
 
 
-@app.post("/process-with-files")
+@app.post("/process-with-files", response_model=None)
 async def process_message_with_files_http(request: ProcessMessageWithFilesRequest):
     """
     Process an encrypted message and its files using a single MEK.
@@ -373,6 +379,10 @@ async def process_message_with_files_http(request: ProcessMessageWithFilesReques
     - MEK is wrapped for compliance, sender, and recipient (stored on DM envelope)
     """
     try:
+        transport_files = [
+            {"encrypted_file_data_b64": f.encrypted_file_data_b64, "filename": f.filename}
+            for f in request.files
+        ]
         return await process_message_with_files(
             client_public_key_b64=request.client_public_key_b64,
             transport_nonce_b64=request.transport_nonce_b64,
@@ -380,7 +390,7 @@ async def process_message_with_files_http(request: ProcessMessageWithFilesReques
             compliance_public_key_b64=request.compliance_public_key_b64,
             sender_public_key_b64=request.sender_public_key_b64,
             recipient_public_key_b64=request.recipient_public_key_b64,
-            files=[f.encrypted_file_data_b64 for f in request.files],
+            transport_files=transport_files,
         )
     except Exception as e:
         logger.exception("Failed to process message with files: %s", e)

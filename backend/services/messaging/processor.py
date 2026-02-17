@@ -9,10 +9,12 @@ This module handles the core envelope encryption workflow:
 5. Store encrypted message + wrapped keys
 """
 
+import io
 import logging
 import json
 import time
 import base64
+from pathlib import Path
 from typing import Dict, Any, Optional
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
@@ -147,9 +149,41 @@ def process_encrypted_message(
         raise
 
 
+_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+_THUMB_SIZE = 80
+
+
+def _generate_thumbnail(image_bytes: bytes) -> tuple[str | None, list[int]]:
+    """Generate tiny JPEG thumbnail (Telegram-style). Returns (base64_jpeg, [w,h]) or (None, [1,1]) on error."""
+    try:
+        from math import gcd
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        img = img.convert("RGB")
+        if hasattr(img, "info") and img.info:
+            img.info.pop("icc_profile", None)
+        w, h = img.size
+        g = gcd(w, h) if h else 1
+        aspect_wh = [w // g, h // g] if g else [1, 1]
+        if w > _THUMB_SIZE or h > _THUMB_SIZE:
+            scale = min(_THUMB_SIZE / w, _THUMB_SIZE / h)
+            new_w = max(1, int(w * scale))
+            new_h = max(1, int(h * scale))
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        jpeg_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        logger.info("THUMB: Image %dx%d -> thumb %dx%d, b64len=%d", w, h, img.width, img.height, len(jpeg_b64))
+        return (jpeg_b64, aspect_wh)
+    except Exception as e:
+        logger.warning("THUMB: Generation failed: %s", e)
+        return (None, [1, 1])
+
+
 def process_encrypted_message_and_files(
     plaintext_message: bytes,
     plaintext_files: list[bytes],
+    filenames: list[str],
     compliance_public_key_b64: str,
     sender_public_key_b64: str,
     recipient_public_key_b64: str,
@@ -160,29 +194,61 @@ def process_encrypted_message_and_files(
     - Generates one random MEK
     - Encrypts message and each file with AES-GCM using that MEK (unique nonce per item)
     - Wraps the MEK for compliance, sender, and recipient
-
     Returns:
         {
             "message": {"nonce": str, "ciphertext": str},
             "files": [{"nonce": str, "ciphertext": str}, ...],
-            "compliance_wrapped_mek": str,
-            "sender_wrapped_mek": str,
-            "recipient_wrapped_mek": str,
+            ...
         }
     """
     start_time = time.time()
+    if len(filenames) != len(plaintext_files):
+        filenames = [f"file_{i}" for i in range(len(plaintext_files))]
 
     # One MEK for everything in this envelope
     mek = generate_mek()
 
+    # Build message plaintext: when we have files, use JSON with text + fileThumbnails + fileAspectRatios + fileSizes
+    file_thumbnails: list[str] = []
+    file_aspect_ratios: list[list[int]] = []
+    file_sizes: list[int] = []
+    for i, f_bytes in enumerate(plaintext_files):
+        name = filenames[i] if i < len(filenames) else ""
+        file_sizes.append(len(f_bytes))
+        if Path(name).suffix.lower() in _IMAGE_EXTENSIONS:
+            thumb_b64, wh = _generate_thumbnail(f_bytes)
+            file_thumbnails.append(thumb_b64 or "")
+            file_aspect_ratios.append(wh)
+        else:
+            file_thumbnails.append("")
+            file_aspect_ratios.append([1, 1])
+
+    if plaintext_files:
+        msg_obj = {
+            "text": plaintext_message.decode("utf-8", errors="replace"),
+            "fileThumbnails": file_thumbnails,
+            "fileAspectRatios": file_aspect_ratios,
+            "fileSizes": file_sizes,
+        }
+        logger.info(
+            "THUMB: Message with %d files, thumbnails=%s, aspectRatios=%s",
+            len(file_thumbnails),
+            [f"len={len(t)}" if t else "empty" for t in file_thumbnails],
+            file_aspect_ratios,
+        )
+        plaintext_to_encrypt = json.dumps(msg_obj, ensure_ascii=False).encode("utf-8")
+    else:
+        plaintext_to_encrypt = plaintext_message
+
     # Encrypt message
-    msg_nonce, msg_ciphertext = encrypt_message(plaintext_message, mek)
+    msg_nonce, msg_ciphertext = encrypt_message(plaintext_to_encrypt, mek)
 
     # Encrypt files (same MEK, per-file nonce)
-    files_out: list[Dict[str, str]] = []
-    for f_bytes in plaintext_files:
+    files_out: list[Dict[str, Any]] = []
+    for i, f_bytes in enumerate(plaintext_files):
         f_nonce, f_ciphertext = encrypt_message(f_bytes, mek)
-        files_out.append({"nonce": f_nonce, "ciphertext": f_ciphertext})
+        entry: Dict[str, Any] = {"nonce": f_nonce, "ciphertext": f_ciphertext}
+        files_out.append(entry)
 
     # Derive wrap keys deterministically (same as existing flow)
     compliance_key_bytes = base64.b64decode(compliance_public_key_b64)
