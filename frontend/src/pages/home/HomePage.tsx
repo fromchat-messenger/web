@@ -33,88 +33,44 @@ export default function HomePage() {
     }
 
     const openBtn = (
-        <MaterialButton variant="filled" onClick={handleGetStarted}>
-            {isMobile ? "Скачать приложение" : isLoggedIn ? "Перейти в чат" : "Войти"}
+        <MaterialButton variant="filled" onClick={handleGetStarted} icon={isMobile ? "download" : isLoggedIn ? "open_in_new" : "login"}>
+            {isMobile ? "Скачать" : isLoggedIn ? "Открыть" : "Войти"}
         </MaterialButton>
     );
 
     return (
         <div className={styles.homepage}>
+            <div className={styles.colorSphere} />
             <header className={styles.homepageHeader}>
                 <div className={styles.container}>
                     <div className={styles.headerContent}>
                         <div className={styles.logo}>
+                            <div className={styles.logoIcon} />
                             <h1>FromChat</h1>
-                            <span className={styles.tagline}>100% открытый мессенджер</span>
                         </div>
-                        <nav className={styles.headerNav}>
+                        <div className={styles.headerCenterLinks}>
                             <GitHubLink>
-                                <MaterialButton variant="text">GitHub</MaterialButton>
+                                <MaterialButton variant="text" icon="code">GitHub</MaterialButton>
                             </GitHubLink>
                             <SupportLink>
-                                <MaterialButton variant="text">Поддержка</MaterialButton>
+                                <MaterialButton variant="text" icon="support">Поддержка</MaterialButton>
                             </SupportLink>
-
+                        </div>
+                        <div className={styles.headerButton}>
                             {openBtn}
-                        </nav>
+                        </div>
                     </div>
                 </div>
             </header>
 
             <main>
-                <section className={styles.hero}>
-                    <div className={styles.container}>
-                        <div className={styles.heroContent}>
-                            <h2 className={styles.heroTitle}>
-                                Безопасный мессенджер с открытым исходным кодом
-                            </h2>
-                            <p className={styles.heroDescription}>
-                                FromChat — это полностью открытый мессенджер с end-to-end шифрованием,
-                                поддержкой файлов и уведомлений. Создан для тех, кто ценит приватность и свободу.
-                            </p>
-                            <div className={styles.heroActions}>
-                                {openBtn}
-                                {!isMobile && (
-                                    <MaterialButton
-                                        variant="outlined"
-                                        onClick={() => navigate("/register")}>
-                                        Зарегистрироваться
-                                    </MaterialButton>
-                                )}
-                            </div>
-                        </div>
-                        <div className={styles.heroVisual}>
-                            <div className={styles.chatPreview}>
-                                <div className={styles.chatWindow}>
-                                    <div className={styles.chatHeader}>
-                                        <div className={styles.chatTitle}>Общий чат</div>
-                                        <div className={styles.onlineIndicator}>●</div>
-                                    </div>
-                                    <div className={styles.chatMessages}>
-                                        <div className={`${styles.message} ${styles.received}`}>
-                                            <div className={styles.messageAvatar}>А</div>
-                                            <div className={styles.messageContent}>
-                                                <div className={styles.messageText}>Привет! Как дела?</div>
-                                                <div className={styles.messageTime}>14:30</div>
-                                            </div>
-                                        </div>
-                                        <div className={`${styles.message} ${styles.sent}`}>
-                                            <div className={styles.messageContent}>
-                                                <div className={styles.messageText}>Всё отлично! А у тебя как?</div>
-                                                <div className={styles.messageTime}>14:32</div>
-                                            </div>
-                                        </div>
-                                        <div className={`${styles.message} ${styles.received}`}>
-                                            <div className={styles.messageAvatar}>Б</div>
-                                            <div className={styles.messageContent}>
-                                                <div className={styles.messageText}>Отправляю файл 📎</div>
-                                                <div className={styles.messageTime}>14:35</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                <section className={styles.title}>
+                    <div className={styles.titleLogo} />
+                    <div className={styles.titleContent}>FromChat</div>
+                    <div className={styles.titleDesc}>100% бесплатный и открытый мессенджер. Поддерживает self-hosted установку на своем сервере.</div>
+                    <div className={styles.titleButtons}>
+                        <MaterialButton variant="filled" onClick={() => navigate("/auth?mode=login")} icon="devices">Открыть веб-версию</MaterialButton>
+                        <MaterialButton variant="outlined" onClick={() => navigate("/download-app")} icon="download">Скачать приложение</MaterialButton>
                     </div>
                 </section>
 
