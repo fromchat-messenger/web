@@ -3,6 +3,8 @@ import { useUserStore } from "@/state/user";
 import styles from "./home.module.scss";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
 import { MaterialButton, MaterialIcon } from "@/utils/material";
+import generalChatScreenshot from "../../images/screenshots/general-chat.png";
+import dmScreenshot from "../../images/screenshots/dm.png";
 
 function GitHubLink({ children }: { children: React.ReactNode }) {
     return (
@@ -75,74 +77,21 @@ export default function HomePage() {
                 </section>
 
                 <section className={styles.features}>
-                    <div className={styles.container}>
-                        <h3 className={styles.sectionTitle}>Возможности</h3>
-                        <div className={styles.featuresGrid}>
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="security" />
-                                </div>
-                                <h4>End-to-End Шифрование</h4>
-                                <p>
-                                    Ваши личные сообщения защищены современным шифрованием X25519 + AES-GCM.
-                                    Только вы и получатель можете прочитать сообщения.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="code" />
-                                </div>
-                                <h4>100% открытый код</h4>
-                                <p>
-                                    Весь исходный код доступен на <GitHubLink>GitHub</GitHubLink>. Вы можете проверить безопасность,
-                                    внести изменения или развернуть свой сервер.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="attach_file" />
-                                </div>
-                                <h4>Обмен Файлами</h4>
-                                <p>
-                                    Отправляйте файлы до 4 ГБ. Файлы в личных сообщениях шифруются.
-                                    В общем чате шифрования нет, так как ваши сообщения могут читать все пользователи FromChat.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="notifications" />
-                                </div>
-                                <h4>Уведомления</h4>
-                                <p>
-                                    Получайте push-уведомления в браузере и настольном приложении.
-                                    Никогда не пропустите важное сообщение.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="edit" />
-                                </div>
-                                <h4>Редактирование</h4>
-                                <p>
-                                    Редактируйте и удаляйте свои сообщения. Отвечайте на сообщения
-                                    для лучшего контекста общения.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="computer" />
-                                </div>
-                                <h4>Кроссплатформенность</h4>
-                                <p>
-                                    Работает в браузере и как настольное приложение для Windows,
-                                    macOS и Linux. Единый интерфейс везде.
-                                </p>
-                            </div>
+                    <div className={`${styles.featureContainer}`}>
+                        <div className={styles.featureText}>
+                            <div className={styles.featureTitle}>Общий чат</div>
+                            <div className={styles.featureDesc}>Общайтесь со всеми пользователями этого сервера FromChat.</div>
+                        </div>
+                        <div className={styles.featureScreenshotOuter}>
+                            <div className={styles.featureScreenshotGlow} />
+                            <img src={generalChatScreenshot} className={styles.featureScreenshot} />
+                        </div>
+                    </div>
+                    <div className={`${styles.featureContainer}`}>
+                        <img src={dmScreenshot} className={styles.featureScreenshot} />
+                        <div className={styles.featureText}>
+                            <div className={styles.featureTitle}>Личные сообщения</div>
+                            <div className={styles.featureDesc}>Общайтесь с одним человеком.</div>
                         </div>
                     </div>
                 </section>
