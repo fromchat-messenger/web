@@ -5,6 +5,7 @@ import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
 import { MaterialButton, MaterialIcon } from "@/utils/material";
 import generalChatScreenshot from "../../images/screenshots/general-chat.png";
 import dmScreenshot from "../../images/screenshots/dm.png";
+import type { ReactNode } from "react";
 
 function GitHubLink({ children }: { children: React.ReactNode }) {
     return (
@@ -16,6 +17,35 @@ function SupportLink({ children }: { children: React.ReactNode }) {
     return (
         <a href="https://t.me/denis0001-dev" target="_blank">{children}</a>
     );
+}
+
+interface FeatureSectionProps {
+    title: ReactNode;
+    children: ReactNode;
+    screenshot: string;
+    right?: boolean;
+}
+
+function FeatureSection({title, children, screenshot, right = false}: FeatureSectionProps) {
+    const featureText = (
+        <div className={styles.featureText}>
+            <div className={styles.featureTitle}>{title}</div>
+            <div className={styles.featureDesc}>{children}</div>
+        </div>
+    );
+
+    const featureScreenshot = (
+        <div className={styles.featureScreenshotOuter}>
+            <div className={styles.featureScreenshotGlow} />
+            <img src={screenshot} className={styles.featureScreenshot} />
+        </div>
+    )
+
+    return (
+        <div className={`${styles.featureContainer}`}>
+            {right ? <>{featureText}{featureScreenshot}</> : <>{featureScreenshot}{featureText}</>}
+        </div>
+    )
 }
 
 export default function HomePage() {
@@ -77,23 +107,18 @@ export default function HomePage() {
                 </section>
 
                 <section className={styles.features}>
-                    <div className={`${styles.featureContainer}`}>
-                        <div className={styles.featureText}>
-                            <div className={styles.featureTitle}>Общий чат</div>
-                            <div className={styles.featureDesc}>Общайтесь со всеми пользователями этого сервера FromChat.</div>
-                        </div>
-                        <div className={styles.featureScreenshotOuter}>
-                            <div className={styles.featureScreenshotGlow} />
-                            <img src={generalChatScreenshot} className={styles.featureScreenshot} />
-                        </div>
-                    </div>
-                    <div className={`${styles.featureContainer}`}>
-                        <img src={dmScreenshot} className={styles.featureScreenshot} />
-                        <div className={styles.featureText}>
-                            <div className={styles.featureTitle}>Личные сообщения</div>
-                            <div className={styles.featureDesc}>Общайтесь с одним человеком.</div>
-                        </div>
-                    </div>
+                    <FeatureSection
+                        title={<>Общий чат</>}
+                        screenshot={generalChatScreenshot}
+                        right
+                    >
+                        Общайтесь со всеми пользователями этого сервера FromChat.
+                    </FeatureSection>
+                    <FeatureSection
+                        title={<>Личные сообщения</>}
+                        screenshot={dmScreenshot}>
+                        Общайтесь с одним человеком.
+                    </FeatureSection>
                 </section>
 
                 <section className={styles.download}>
