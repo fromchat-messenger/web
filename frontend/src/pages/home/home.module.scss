@@ -5,6 +5,7 @@
     color: $color-dark-on-background;
     font-family: 'Montserrat', sans-serif;
     position: relative;
+    background-color: $color-dark-surface;
 
     // Container styles
     .container {
@@ -145,98 +146,88 @@
 
     // Features section
     .features {
-        padding: 6rem 0;
-        backdrop-filter: blur(20px);
+        display: flex;
+        flex-direction: column;
+        gap: 50px;
 
-        .sectionTitle {
-            text-align: center;
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 3rem;
-            background: linear-gradient(45deg, $color-dark-primary, $color-dark-tertiary);
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            text-shadow: 0 0 20px rgba($color-dark-primary, 0.5);
-        }
+        .featureContainer {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            padding: 0 16px;
+            align-items: center;
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 700px;
 
-        .featuresGrid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
+            .featureText {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                flex-grow: 1;
+                flex-shrink: 1;
 
-            .featureCard {
-                background: rgba($color-dark-surface-container, 0.6);
-                backdrop-filter: blur(20px);
-                border-radius: 20px;
-                padding: 2rem;
-                border: 1px solid rgba($color-dark-primary, 0.3);
-                transition: all 0.3s ease;
+                .featureTitle {
+                    font-size: 30pt;
+                    font-weight: 700;
+                    background: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
+                    background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                    text-shadow: 0 0 20px rgba(147, 51, 234, 0.5);
+                    line-height: normal;
+                }
+
+                .featureDesc {
+                    text-align: left;
+                    font-size: 15pt;
+                }
+            }
+
+            .featureScreenshotOuter {
                 position: relative;
-                overflow: hidden;
 
-                &::before {
-                    content: '';
+                .featureScreenshotGlow {
+                    $size: 400px;
+
+                    @keyframes rotateGradient {
+                        from {
+                            transform: rotate(0deg);
+                        }
+                        to {
+                            transform: rotate(360deg);
+                        }
+                    }                    
+
+                    background: conic-gradient(
+                        from 0deg,
+                        rgba(147, 51, 234, 0.5) 0%,
+                        rgba(99, 102, 241, 0.6) 12.5%,
+                        rgba(59, 130, 246, 0.55) 25%,
+                        rgba(168, 85, 247, 0.5) 37.5%,
+                        rgba(217, 70, 239, 0.6) 50%,
+                        rgba(236, 72, 153, 0.55) 62.5%,
+                        rgba(192, 132, 252, 0.5) 75%,
+                        rgba(126, 34, 206, 0.6) 87.5%,
+                        rgba(147, 51, 234, 0.5) 100%
+                    );
                     position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: linear-gradient(135deg, rgba($color-dark-primary, 0.1), rgba($color-dark-tertiary, 0.1));
-                    opacity: 0;
-                    transition: opacity 0.3s ease;
+                    width: $size;
+                    height: $size;
+                    top: calc(50% - ($size / 2));
+                    opacity: 0.6;
+                    left: calc(50% - ($size / 2));
+                    border-radius: 50%;
+                    filter: blur(80px);
                     z-index: 0;
+                    will-change: transform;
+                    animation: rotateGradient 8s linear infinite;
                 }
 
-                > * {
+                .featureScreenshot {
+                    max-width: 300px;
+                    z-index: 50;
                     position: relative;
-                    z-index: 1;
-                }
-
-                &:hover {
-                    transform: translateY(-5px);
-                    box-shadow:
-                        0 20px 40px rgba(0, 0, 0, 0.3),
-                        0 0 30px rgba($color-dark-primary, 0.2);
-                    border-color: rgba($color-dark-primary, 0.5);
-
-                    &::before {
-                        opacity: 1;
-                    }
-                }
-
-                .featureIcon {
-                    width: 60px;
-                    height: 60px;
-                    background: linear-gradient(135deg, rgba($color-dark-primary, 0.3), rgba($color-dark-tertiary, 0.3));
-                    border-radius: 15px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 1.5rem;
-                    border: 1px solid rgba($color-dark-primary, 0.4);
-                    box-shadow: 0 0 15px rgba($color-dark-primary, 0.2);
-                    user-select: none;
-
-                    mdui-icon {
-                        font-size: 1.5rem;
-                        color: $color-dark-primary;
-                        text-shadow: 0 0 10px rgba($color-dark-primary, 0.8);
-                    }
-                }
-
-                h4 {
-                    font-size: 1.25rem;
-                    font-weight: 600;
-                    margin-bottom: 1rem;
-                    color: $color-dark-on-surface;
-                    text-shadow: 0 0 10px rgba($color-dark-primary, 0.3);
-                }
-
-                p {
-                    line-height: 1.6;
-                    opacity: 0.9;
-                    color: $color-dark-on-surface-variant;
                 }
             }
         }
@@ -280,9 +271,6 @@
 
     // CTA section
     .cta {
-        padding: 6rem 0;
-        backdrop-filter: blur(20px);
-
         .ctaContent {
             text-align: center;
             max-width: 600px;
@@ -317,10 +305,6 @@
 
     // Footer
     .homepageFooter {
-        backdrop-filter: blur(20px);
-        padding: 3rem 0 1rem;
-        box-shadow: 0 -4px 20px rgba($color-dark-primary, 0.1);
-
         .footerContent {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
