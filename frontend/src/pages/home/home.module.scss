@@ -30,7 +30,7 @@
         width: 100%;
         aspect-ratio: 1 / 1;
         top: -90vh;
-        opacity: 0.2;
+        opacity: 0.3;
         left: 0;
         border-radius: 50%;
         filter: blur(80px);
@@ -102,7 +102,7 @@
 
     // Hero section
     .title {
-        padding: 4rem 0;
+        padding: 60px 80px;
         display: flex;
         align-items: center;
         margin-top: 0;
@@ -133,6 +133,7 @@
             font-size: 16pt;
             opacity: 0.8;
             margin-top: 10px;
+            text-align: center;
         }
 
         .titleButtons {
