@@ -1,5 +1,51 @@
 @use "../../css/material" as *;
 
+// Shared variables
+$gradient-rainbow: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
+$gradient-conic: conic-gradient(
+    from 0deg,
+    rgba(147, 51, 234, 0.5) 0%,
+    rgba(99, 102, 241, 0.6) 12.5%,
+    rgba(59, 130, 246, 0.55) 25%,
+    rgba(168, 85, 247, 0.5) 37.5%,
+    rgba(217, 70, 239, 0.6) 50%,
+    rgba(236, 72, 153, 0.55) 62.5%,
+    rgba(192, 132, 252, 0.5) 75%,
+    rgba(126, 34, 206, 0.6) 87.5%,
+    rgba(147, 51, 234, 0.5) 100%
+);
+$glow-purple: rgba(147, 51, 234, 0.5);
+$radius-card: 20px;
+$radius-pill: 9999px;
+
+// Mixins
+@mixin gradient-text {
+    background: $gradient-rainbow;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 20px $glow-purple;
+}
+
+@mixin section-heading {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    @include gradient-text;
+}
+
+@mixin section-content {
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+
+    p {
+        font-size: 1.25rem;
+        line-height: 1.6;
+        margin-bottom: 2.5rem;
+        opacity: 0.9;
+    }
+}
+
 .homepage {
     min-height: 100vh;
     color: $color-dark-on-background;
@@ -7,26 +53,14 @@
     position: relative;
     background-color: $color-dark-surface;
 
-    // Container styles
     .container {
-        max-width: 1200px;
+        max-width: 960px;
         margin: 0 auto;
         padding: 0 2rem;
     }
 
     .colorSphere {
-        background: conic-gradient(
-            from 0deg,
-            rgba(147, 51, 234, 0.5) 0%,
-            rgba(99, 102, 241, 0.6) 12.5%,
-            rgba(59, 130, 246, 0.55) 25%,
-            rgba(168, 85, 247, 0.5) 37.5%,
-            rgba(217, 70, 239, 0.6) 50%,
-            rgba(236, 72, 153, 0.55) 62.5%,
-            rgba(192, 132, 252, 0.5) 75%,
-            rgba(126, 34, 206, 0.6) 87.5%,
-            rgba(147, 51, 234, 0.5) 100%
-        );
+        background: $gradient-conic;
         position: absolute;
         width: 100%;
         aspect-ratio: 1 / 1;
@@ -37,7 +71,6 @@
         filter: blur(80px);
     }
 
-    // Header styles
     .homepageHeader {
         margin: 0 16px;
         padding: 16px 5px;
@@ -73,11 +106,7 @@
                     font-size: 2rem;
                     font-weight: 700;
                     margin: 0;
-                    background: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
-                    background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                    background-clip: text;
-                    text-shadow: 0 0 20px rgba(147, 51, 234, 0.5);
+                    @include gradient-text;
                 }
             }
 
@@ -101,7 +130,6 @@
         }
     }
 
-    // Hero section
     .title {
         padding: 60px 80px;
         display: flex;
@@ -122,12 +150,8 @@
         .titleContent {
             font-size: 30pt;
             font-weight: 700;
-            background: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            text-shadow: 0 0 20px rgba(147, 51, 234, 0.5);
             margin-top: 10px;
+            @include gradient-text;
         }
 
         .titleDesc {
@@ -144,11 +168,11 @@
         }
     }
 
-    // Features section
     .features {
         display: flex;
         flex-direction: column;
         gap: 50px;
+        overflow-x: clip;
 
         .featureContainer {
             display: flex;
@@ -170,12 +194,8 @@
                 .featureTitle {
                     font-size: 30pt;
                     font-weight: 700;
-                    background: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
-                    background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                    background-clip: text;
-                    text-shadow: 0 0 20px rgba(147, 51, 234, 0.5);
                     line-height: normal;
+                    @include gradient-text;
                 }
 
                 .featureDesc {
@@ -191,26 +211,11 @@
                     $size: 400px;
 
                     @keyframes rotateGradient {
-                        from {
-                            transform: rotate(0deg);
-                        }
-                        to {
-                            transform: rotate(360deg);
-                        }
-                    }                    
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
+                    }
 
-                    background: conic-gradient(
-                        from 0deg,
-                        rgba(147, 51, 234, 0.5) 0%,
-                        rgba(99, 102, 241, 0.6) 12.5%,
-                        rgba(59, 130, 246, 0.55) 25%,
-                        rgba(168, 85, 247, 0.5) 37.5%,
-                        rgba(217, 70, 239, 0.6) 50%,
-                        rgba(236, 72, 153, 0.55) 62.5%,
-                        rgba(192, 132, 252, 0.5) 75%,
-                        rgba(126, 34, 206, 0.6) 87.5%,
-                        rgba(147, 51, 234, 0.5) 100%
-                    );
+                    background: $gradient-conic;
                     position: absolute;
                     width: $size;
                     height: $size;
@@ -233,65 +238,74 @@
         }
     }
 
-    // Download section
     .download {
-        padding: 6rem 0;
-
         .downloadContent {
-            text-align: center;
-            max-width: 600px;
-            margin: 0 auto;
+            @include section-content;
 
             h3 {
-                font-size: 2.5rem;
-                font-weight: 700;
-                margin-bottom: 1.5rem;
-                background: linear-gradient(45deg, $color-dark-primary, $color-dark-tertiary);
-                background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                text-shadow: 0 0 20px rgba($color-dark-primary, 0.5);
+                @include section-heading;
             }
 
-            p {
-                font-size: 1.25rem;
-                line-height: 1.6;
-                margin-bottom: 2.5rem;
-                opacity: 0.9;
-            }
-
-            .downloadButtons {
+            .downloadPlatforms {
                 display: flex;
-                gap: 1rem;
+                gap: 1.5rem;
                 justify-content: center;
                 flex-wrap: wrap;
+            }
+
+            .downloadCard {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.75rem;
+                padding: 2rem 1.5rem;
+                min-width: 200px;
+                max-width: 260px;
+                background: rgba($color-dark-surface-container, 0.6);
+                border: 1px solid rgba($color-dark-outline, 0.3);
+                border-radius: $radius-card;
+                text-decoration: none;
+                color: inherit;
+                transition: all 0.3s ease;
+
+                &:hover {
+                    background: rgba($color-dark-surface-container-high, 0.8);
+                    border-color: rgba($color-dark-primary, 0.5);
+                    box-shadow: 0 0 24px rgba($color-dark-primary, 0.2);
+                }
+            }
+
+            .downloadCardIcon {
+                width: 48px;
+                height: 48px;
+                color: $color-dark-primary;
+            }
+
+            .downloadCardTitle {
+                font-size: 1.25rem;
+                font-weight: 600;
+                @include gradient-text;
+            }
+
+            .downloadCardDesc {
+                font-size: 0.9rem;
+                opacity: 0.8;
+            }
+
+            .downloadCardBtn {
+                margin-top: 0.5rem;
             }
         }
     }
 
-    // CTA section
     .cta {
+        padding-bottom: 128px;
+
         .ctaContent {
-            text-align: center;
-            max-width: 600px;
-            margin: 0 auto;
+            @include section-content;
 
             h3 {
-                font-size: 2.5rem;
-                font-weight: 700;
-                margin-bottom: 1.5rem;
-                background: linear-gradient(45deg, $color-dark-primary, $color-dark-tertiary);
-                background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                text-shadow: 0 0 20px rgba($color-dark-primary, 0.5);
-            }
-
-            p {
-                font-size: 1.25rem;
-                line-height: 1.6;
-                margin-bottom: 2.5rem;
-                opacity: 0.9;
+                @include section-heading;
             }
 
             .ctaActions {
@@ -303,57 +317,98 @@
         }
     }
 
-    // Footer
     .homepageFooter {
-        .footerContent {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 2rem;
-            margin-bottom: 2rem;
+        padding: 0 16px;
+        background: $color-dark-surface;
+        display: flex;
+        flex-direction: row;
+        gap: 32px;
+        max-width: 1000px;
+        margin-left: auto;
+        margin-right: auto;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 48px;
 
-            .footerSection {
-                h4 {
-                    font-size: 1.1rem;
-                    font-weight: 600;
-                    margin-bottom: 1rem;
-                    color: $color-dark-on-surface;
-                    text-shadow: 0 0 10px rgba($color-dark-primary, 0.3);
-                }
+        .footerBrand {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
 
-                p {
-                    opacity: 0.8;
-                    line-height: 1.6;
-                    color: $color-dark-on-surface-variant;
-                }
+            .footerLogoRow {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
 
-                a {
-                    color: $color-dark-on-surface;
-                    text-decoration: none;
-                    opacity: 0.8;
-                    display: block;
-                    margin-bottom: 0.5rem;
-                    transition: all 0.3s ease;
-                    padding: 0.25rem 0;
-                    border-radius: 4px;
+            .footerLogo {
+                width: 40px;
+                height: 40px;
+                background-image: url('../../images/logo_square.svg');
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+                border-radius: 12px;
+            }
 
-                    &:hover {
-                        opacity: 1;
-                        color: $color-dark-primary;
-                        text-shadow: 0 0 10px rgba($color-dark-primary, 0.5);
-                        background: rgba($color-dark-primary, 0.1);
-                    }
-                }
+            .footerBrandName {
+                font-size: 2rem;
+                font-weight: 700;
+                @include gradient-text;
+            }
+
+            .footerCopyright {
+                font-size: 0.875rem;
+                color: $color-dark-on-surface-variant;
+                opacity: 0.8;
+                margin: 0;
             }
         }
 
-        .footerBottom {
-            text-align: center;
-            padding-top: 2rem;
+        .footerLinks {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
 
-            p {
-                opacity: 0.7;
-                margin: 0;
-                color: $color-dark-on-surface-variant;
+            .footerSection {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.75rem;
+
+                .footerLink {
+                    display: flex;
+                    flex-direction: row;
+                    align-items: center;
+                    gap: 0.5rem;
+                    color: $color-dark-on-surface-variant;
+                    text-decoration: none;
+                    font-size: 0.95rem;
+                    transition: color 0.2s ease;
+        
+                    &:hover {
+                        color: $color-dark-on-surface;
+                    }
+
+                    .footerLinkIcon {
+                        width: 24px;
+                        height: 24px;
+                        min-width: 24px;
+                        opacity: 0.9;
+                    }
+
+                    .footerLinkIconSvg {
+                        display: inline-block;
+                        background-color: currentColor;
+                        mask-size: contain;
+                        mask-repeat: no-repeat;
+                        mask-position: center;
+                        -webkit-mask-size: contain;
+                        -webkit-mask-repeat: no-repeat;
+                        -webkit-mask-position: center;
+                    }
+                }
             }
         }
     }
