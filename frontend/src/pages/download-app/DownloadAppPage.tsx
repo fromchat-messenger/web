@@ -11,7 +11,7 @@ export default function DownloadAppPage() {
                     вам нужно скачать приложение мессенджера.
                 </p>
 
-                <a href="https://github.com/denis0001-dev/FromChat-android/releases/latest">
+                <a href="https://github.com/fromchat-messenger/app/releases/latest" target="_blank" rel="noopener noreferrer">
                     <MaterialButton>Скачать на GitHub</MaterialButton>
                 </a>
 
