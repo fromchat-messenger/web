@@ -109,6 +109,10 @@ $radius-pill: 9999px;
                 align-items: center;
                 gap: 10px;
 
+                @media (max-width: 730px) {
+                    display: none;
+                }
+
                 a {
                     display: flex;
                     align-items: center;
@@ -120,6 +124,24 @@ $radius-pill: 9999px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+            }
+
+            .headerDownloadButton {
+                display: block;
+            }
+
+            .headerSmallButton {
+                display: none;
+            }
+
+            @media (max-width: 450px) {
+                .headerSmallButton {
+                    display: block;
+                }
+
+                .headerDownloadButton {
+                    display: none;
+                }
             }
         }
     }
@@ -432,6 +454,49 @@ $radius-pill: 9999px;
                     }
                 }
             }
+        }
+    }
+
+    @media (max-width: 635px) {
+        .container {
+            padding: 0 1rem;
+        }
+
+        .title {
+            .titleContent,
+            .titleDesc,
+            .titleButtons {
+                padding: 0 1rem;
+            }
+        }
+
+        .features {
+            padding: 0 1rem;
+
+            .featureContainer {
+                flex-direction: column;
+                align-items: center;
+                padding: 0 1rem;
+
+                .featureText {
+                    order: 1;
+                    text-align: center;
+
+                    .featureDesc {
+                        text-align: center;
+                    }
+                }
+
+                .featureScreenshotOuter {
+                    order: 2;
+                }
+            }
+        }
+
+        .homepageFooter {
+            flex-direction: column-reverse;
+            align-items: flex-start;
+            padding: 32px;
         }
     }
 }

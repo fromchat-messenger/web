@@ -2,7 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useUserStore } from "@/state/user";
 import styles from "./home.module.scss";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
-import { MaterialButton, MaterialIcon } from "@/utils/material";
+import { MaterialButton, MaterialIcon, MaterialIconButton } from "@/utils/material";
 import generalChatScreenshot from "../../images/screenshots/general-chat.png";
 import dmScreenshot from "../../images/screenshots/dm.png";
 import telegramIcon from "../../images/telegram.svg";
@@ -71,7 +71,12 @@ export default function HomePage() {
     }
 
     const openBtn = (
-        <MaterialButton variant="filled" onClick={handleGetStarted} icon={isMobile ? "download" : isLoggedIn ? "open_in_new" : "login"}>
+        <MaterialButton 
+            variant="filled" 
+            onClick={handleGetStarted} 
+            icon={isMobile ? "download" : isLoggedIn ? "open_in_new" : "login"}
+            className={styles.headerDownloadButton}
+        >
             {isMobile ? "Скачать" : isLoggedIn ? "Открыть" : "Войти"}
         </MaterialButton>
     );
@@ -95,6 +100,14 @@ export default function HomePage() {
                         </div>
                         <div className={styles.headerButton}>
                             {openBtn}
+                            {isMobile ? (
+                                <MaterialIconButton 
+                                    variant="filled" 
+                                    onClick={() => navigate("/download-app")} 
+                                    icon="download" 
+                                    className={styles.headerSmallButton} 
+                                />
+                            ) : null}
                         </div>
                     </div>
                 </div>
@@ -110,8 +123,22 @@ export default function HomePage() {
                         100% бесплатный и открытый мессенджер. Поддерживает self-hosted установку на своём сервере.
                     </div>
                     <div className={styles.titleButtons}>
-                        <MaterialButton variant="filled" onClick={() => navigate("/auth?mode=login")} icon="devices">Открыть веб-версию</MaterialButton>
-                        <MaterialButton variant="outlined" onClick={() => navigate("/download-app")} icon="download">Скачать приложение</MaterialButton>
+                        {isMobile ? null : (
+                            <MaterialButton 
+                                variant="filled" 
+                                onClick={() => navigate("/auth?mode=login")} 
+                                icon="devices"
+                            >
+                                Открыть веб-версию
+                            </MaterialButton>
+                        )}
+                        <MaterialButton
+                            variant={isMobile ? "filled" : "outlined"}
+                            onClick={() => navigate("/download-app")}
+                            icon="download"
+                        >
+                            Скачать приложение
+                        </MaterialButton>
                     </div>
                 </section>
 
@@ -239,7 +266,7 @@ export default function HomePage() {
                         <div className={styles.footerLogo} />
                         <span className={styles.footerBrandName}>FromChat</span>
                     </div>
-                    <p className={styles.footerCopyright}>FromChat © 2025</p>
+                    <p className={styles.footerCopyright}>FromChat © 2026</p>
                 </div>
                 <div className={styles.footerLinks}>
                     <div className={styles.footerSection}>
