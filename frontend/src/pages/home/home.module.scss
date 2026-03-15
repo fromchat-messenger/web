@@ -59,27 +59,21 @@ $radius-pill: 9999px;
         padding: 0 2rem;
     }
 
-    .colorSphere {
-        background: $gradient-conic;
-        position: absolute;
-        width: 100%;
-        aspect-ratio: 1 / 1;
-        top: -90vh;
-        opacity: 0.3;
-        left: 0;
-        border-radius: 50%;
-        filter: blur(80px);
+    .homepageHeader {
+        display: flex;
+        justify-content: center;
+        padding: 16px;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
     }
 
-    .homepageHeader {
-        margin: 0 16px;
-        padding: 16px 5px;
+    .headerInner {
+        max-width: 960px;
+        width: 100%;
+        padding: 16px 24px;
         background: rgba($color-dark-surface, 0.8);
         backdrop-filter: blur(10px);
-        position: sticky;
-        top: 16px;
-        z-index: 1000;
-        transition: all 0.3s ease;
         border-radius: 30px;
 
         .headerContent {
@@ -131,11 +125,34 @@ $radius-pill: 9999px;
     }
 
     .title {
-        padding: 60px 80px;
+        padding: 60px 0;
         display: flex;
         align-items: center;
         margin-top: 0;
         flex-direction: column;
+
+        .titleLogoWrapper {
+            position: relative;
+            width: 100%;
+            overflow-x: clip;
+            display: flex;
+            justify-content: center;
+
+            &::before {
+                $size: 1200px;
+
+                content: '';
+                background: $gradient-conic;
+                position: absolute;
+                width: $size;
+                height: $size;
+                bottom: 0;
+                opacity: 0.3;
+                left: calc(50% - ($size / 2));
+                border-radius: 50%;
+                filter: blur(80px);
+            }
+        }
 
         .titleLogo {
             width: 120px;
@@ -145,12 +162,15 @@ $radius-pill: 9999px;
             background-position: center;
             background-repeat: no-repeat;
             border-radius: 30px;
+            position: relative;
+            z-index: 1;
         }
 
         .titleContent {
             font-size: 30pt;
             font-weight: 700;
             margin-top: 10px;
+            padding: 0 80px;
             @include gradient-text;
         }
 
@@ -159,12 +179,14 @@ $radius-pill: 9999px;
             opacity: 0.8;
             margin-top: 10px;
             text-align: center;
+            padding: 0 80px;
         }
 
         .titleButtons {
             display: flex;
             gap: 10px;
             margin-top: 20px;
+            padding: 0 80px;
         }
     }
 

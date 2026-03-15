@@ -78,9 +78,8 @@ export default function HomePage() {
 
     return (
         <div className={styles.homepage}>
-            <div className={styles.colorSphere} />
             <header className={styles.homepageHeader}>
-                <div className={styles.container}>
+                <div className={styles.headerInner}>
                     <div className={styles.headerContent}>
                         <div className={styles.logo}>
                             <div className={styles.logoIcon} />
@@ -103,7 +102,9 @@ export default function HomePage() {
 
             <main>
                 <section className={styles.title}>
-                    <div className={styles.titleLogo} />
+                    <div className={styles.titleLogoWrapper}>
+                        <div className={styles.titleLogo} />
+                    </div>
                     <div className={styles.titleContent}>FromChat</div>
                     <div className={styles.titleDesc}>
                         100% бесплатный и открытый мессенджер. Поддерживает self-hosted установку на своём сервере.
@@ -250,6 +251,15 @@ export default function HomePage() {
                             <MaterialIcon name="language" className={styles.footerLinkIcon} />
                             Веб-версия
                         </Link>
+                        <a
+                            href={`${GITHUB_WEB}/actions/workflows/build.yml`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.footerLink}
+                        >
+                            <MaterialIcon name="computer" className={styles.footerLinkIcon} />
+                            ПК-клиент
+                        </a>
                     </div>
                     <div className={styles.footerSection}>
                         <a href={`${GITHUB_APP}/tree/main`} target="_blank" rel="noopener noreferrer" className={styles.footerLink}>
