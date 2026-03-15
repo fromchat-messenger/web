@@ -172,6 +172,7 @@ $radius-pill: 9999px;
         display: flex;
         flex-direction: column;
         gap: 50px;
+        overflow-x: clip;
 
         .featureContainer {
             display: flex;
@@ -238,8 +239,6 @@ $radius-pill: 9999px;
     }
 
     .download {
-        padding: 6rem 0;
-
         .downloadContent {
             @include section-content;
 
@@ -300,7 +299,7 @@ $radius-pill: 9999px;
     }
 
     .cta {
-        padding: 6rem 0;
+        padding-bottom: 128px;
 
         .ctaContent {
             @include section-content;
@@ -370,6 +369,7 @@ $radius-pill: 9999px;
         .footerLinks {
             display: flex;
             gap: 32px;
+            flex-wrap: wrap;
 
             .footerSection {
                 display: flex;
