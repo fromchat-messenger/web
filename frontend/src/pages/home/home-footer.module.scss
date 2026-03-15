@@ -1,0 +1,120 @@
+@use "../../css/material" as *;
+@use "home-shared" as shared;
+
+.homepageFooter {
+    padding: 0 16px;
+    background: $color-dark-surface;
+    display: flex;
+    flex-direction: row;
+    gap: 32px;
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 48px;
+
+    @media (max-width: 635px) {
+        flex-direction: column-reverse;
+        align-items: flex-start;
+        padding: 32px;
+    }
+}
+
+.footerBrand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.footerLogoRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.footerLogo {
+    width: 40px;
+    height: 40px;
+    background-image: url('../../images/logo_square.svg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    border-radius: 12px;
+}
+
+.footerBrandName {
+    font-size: 32px;
+    font-weight: 700;
+    @include shared.gradient-text;
+}
+
+.footerCopyright {
+    font-size: 14px;
+    color: $color-dark-on-surface-variant;
+    opacity: 0.8;
+    margin: 0;
+}
+
+.footerLinks {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+}
+
+.footerSection {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.footerLink {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    color: $color-dark-on-surface-variant;
+    text-decoration: none;
+    font-size: 15px;
+    transition: color 0.2s ease, transform 0.15s ease;
+    -webkit-user-drag: none;
+    user-select: none;
+
+    &:hover {
+        color: $color-dark-on-surface;
+    }
+
+    &:active {
+        transform: scale(0.92);
+    }
+}
+
+.footerLinkIcon {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    opacity: 0.9;
+}
+
+.footerLinkIconSvg {
+    display: inline-block;
+    background-color: currentColor;
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+}
+
+.footerLinkIconSvgTelegram {
+    mask-image: url('../../images/telegram.svg');
+    -webkit-mask-image: url('../../images/telegram.svg');
+}
+
+.footerLinkIconSvgMax {
+    mask-image: url('../../images/max.svg');
+    -webkit-mask-image: url('../../images/max.svg');
+}

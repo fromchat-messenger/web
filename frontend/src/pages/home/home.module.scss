@@ -1,7 +1,7 @@
 @use "../../css/material" as *;
+@use "home-shared" as shared;
 
-// Shared variables
-$gradient-rainbow: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
+// Shared variables (home-specific)
 $gradient-conic: conic-gradient(
     from 0deg,
     rgba(147, 51, 234, 0.5) 0%,
@@ -14,23 +14,15 @@ $gradient-conic: conic-gradient(
     rgba(126, 34, 206, 0.6) 87.5%,
     rgba(147, 51, 234, 0.5) 100%
 );
-$glow-purple: rgba(147, 51, 234, 0.5);
 $radius-card: 20px;
 $radius-pill: 9999px;
 
 // Mixins
-@mixin gradient-text {
-    background: $gradient-rainbow;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 20px $glow-purple;
-}
-
 @mixin section-heading {
     font-size: 40px;
     font-weight: 700;
     margin-bottom: 24px;
-    @include gradient-text;
+    @include shared.gradient-text;
 }
 
 @mixin section-content {
@@ -54,6 +46,8 @@ $radius-pill: 9999px;
 
 .homepage {
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     color: $color-dark-on-background;
     font-family: 'Montserrat', sans-serif;
     position: relative;
@@ -66,94 +60,9 @@ $radius-pill: 9999px;
         user-select: none;
     }
 
-    header.homepageHeader {
-        display: flex;
-        justify-content: center;
-        padding: 16px;
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-
-        .headerInner {
-            max-width: 960px;
-            width: 100%;
-            padding: 16px 24px;
-            background: rgba($color-dark-surface, 0.8);
-            backdrop-filter: blur(10px);
-            border-radius: 30px;
-
-            .headerContent {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-
-                .logo {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-
-                    .logoIcon {
-                        width: 40px;
-                        height: 40px;
-                        background-image: url('../../images/logo_square.svg');
-                        background-size: cover;
-                        background-position: center;
-                        background-repeat: no-repeat;
-                        border-radius: 12px;
-                    }
-
-                    h1 {
-                        font-size: 32px;
-                        font-weight: 700;
-                        margin: 0;
-                        @include gradient-text;
-                    }
-                }
-
-                .headerCenterLinks {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-
-                    @media (max-width: 730px) {
-                        display: none;
-                    }
-
-                    a {
-                        display: flex;
-                        align-items: center;
-                        gap: 10px;
-                    }
-                }
-
-                .headerButton {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .headerDownloadButton {
-                    display: block;
-                }
-
-                .headerSmallButton {
-                    display: none;
-                }
-
-                @media (max-width: 450px) {
-                    .headerSmallButton {
-                        display: block;
-                    }
-
-                    .headerDownloadButton {
-                        display: none;
-                    }
-                }
-            }
-        }
-    }
-
     main {
+        flex: 1;
+
         .title {
             padding: 60px 0;
             display: flex;
@@ -201,7 +110,7 @@ $radius-pill: 9999px;
                 font-weight: 700;
                 margin-top: 10px;
                 padding: 0 80px;
-                @include gradient-text;
+                @include shared.gradient-text;
             }
 
             .titleDesc {
@@ -247,7 +156,7 @@ $radius-pill: 9999px;
                         font-size: 30pt;
                         font-weight: 700;
                         line-height: normal;
-                        @include gradient-text;
+                        @include shared.gradient-text;
                     }
 
                     .featureDesc {
@@ -302,55 +211,66 @@ $radius-pill: 9999px;
                     @include section-heading;
                 }
 
-                .downloadPlatforms {
-                    display: flex;
-                    gap: 24px;
-                    justify-content: center;
-                    flex-wrap: wrap;
-                }
-
-                .downloadCard {
+                .downloadTable {
+                    width: 100%;
+                    max-width: 720px;
+                    margin: 0 auto;
+                    border-radius: 20px;
+                    background: rgba($color-dark-surface-container, 0.8);
+                    border: 1px solid rgba($color-dark-outline, 0.3);
+                    padding: 8px 16px;
                     display: flex;
                     flex-direction: column;
+                    gap: 4px;
+                }
+
+                .downloadTableHeader {
+                    display: grid;
+                    grid-template-columns: 2fr 2fr auto;
+                    padding: 8px 4px;
+                    font-size: 12px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.08em;
+                    color: $color-dark-on-surface-variant;
+                }
+
+                .downloadTableRow {
+                    display: grid;
+                    grid-template-columns: 2fr 2fr auto;
                     align-items: center;
-                    gap: 12px;
-                    padding: 32px 24px;
-                    min-width: 200px;
-                    max-width: 260px;
-                    background: rgba($color-dark-surface-container, 0.6);
-                    border: 1px solid rgba($color-dark-outline, 0.3);
-                    border-radius: $radius-card;
-                    text-decoration: none;
-                    color: inherit;
-                    transition: all 0.3s ease;
-
+                    padding: 8px 4px;
+                    border-radius: 12px;
                     &:hover {
-                        background: rgba($color-dark-surface-container-high, 0.8);
-                        border-color: rgba($color-dark-primary, 0.5);
-                        box-shadow: 0 0 24px rgba($color-dark-primary, 0.2);
-                    }
-
-                    .downloadCardIcon {
-                        width: 48px;
-                        height: 48px;
-                        color: $color-dark-primary;
-                    }
-
-                    .downloadCardTitle {
-                        font-size: 20px;
-                        font-weight: 600;
-                        @include gradient-text;
-                    }
-
-                    .downloadCardDesc {
-                        font-size: 14px;
-                        opacity: 0.8;
-                    }
-
-                    .downloadCardBtn {
-                        margin-top: 8px;
+                        background-color: rgba($color-dark-surface-container-high, 0.8);
                     }
                 }
+
+                .downloadTableOs {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .downloadTableIcon {
+                    font-size: 20px;
+                    color: $color-dark-primary;
+                    opacity: 0.9;
+                }
+
+                .downloadTableDesc {
+                    font-size: 14px;
+                    color: $color-dark-on-surface-variant;
+                }
+
+                .downloadTableAction {
+                    display: flex;
+                    justify-content: flex-end;
+                }
+
+                .downloadTableActionLink {
+                    text-decoration: none;
+                }
+
             }
         }
 
@@ -375,124 +295,6 @@ $radius-pill: 9999px;
                     flex-wrap: wrap;
                 }
             }
-        }
-    }
-
-    footer.homepageFooter {
-        padding: 0 16px;
-        background: $color-dark-surface;
-        display: flex;
-        flex-direction: row;
-        gap: 32px;
-        max-width: 1000px;
-        margin-left: auto;
-        margin-right: auto;
-        align-items: center;
-        justify-content: center;
-        padding-bottom: 48px;
-
-        .footerBrand {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 12px;
-
-            .footerLogoRow {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-
-            .footerLogo {
-                width: 40px;
-                height: 40px;
-                background-image: url('../../images/logo_square.svg');
-                background-size: cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                border-radius: 12px;
-            }
-
-            .footerBrandName {
-                font-size: 32px;
-                font-weight: 700;
-                @include gradient-text;
-            }
-
-            .footerCopyright {
-                font-size: 14px;
-                color: $color-dark-on-surface-variant;
-                opacity: 0.8;
-                margin: 0;
-            }
-        }
-
-        .footerLinks {
-            display: flex;
-            gap: 32px;
-            flex-wrap: wrap;
-
-            .footerSection {
-                display: flex;
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 12px;
-
-                .footerLink {
-                    display: flex;
-                    flex-direction: row;
-                    align-items: center;
-                    gap: 8px;
-                    color: $color-dark-on-surface-variant;
-                    text-decoration: none;
-                    font-size: 15px;
-                    transition: color 0.2s ease, transform 0.15s ease;
-                    -webkit-user-drag: none;
-                    user-select: none;
-
-                    &:hover {
-                        color: $color-dark-on-surface;
-                    }
-
-                    &:active {
-                        transform: scale(0.92);
-                    }
-
-                    .footerLinkIcon {
-                        width: 24px;
-                        height: 24px;
-                        min-width: 24px;
-                        opacity: 0.9;
-                    }
-
-                    .footerLinkIconSvg {
-                        display: inline-block;
-                        background-color: currentColor;
-                        mask-size: contain;
-                        mask-repeat: no-repeat;
-                        mask-position: center;
-                        -webkit-mask-size: contain;
-                        -webkit-mask-repeat: no-repeat;
-                        -webkit-mask-position: center;
-                    }
-
-                    .footerLinkIconSvgTelegram {
-                        mask-image: url('../../images/telegram.svg');
-                        -webkit-mask-image: url('../../images/telegram.svg');
-                    }
-
-                    .footerLinkIconSvgMax {
-                        mask-image: url('../../images/max.svg');
-                        -webkit-mask-image: url('../../images/max.svg');
-                    }
-                }
-            }
-        }
-
-        @media (max-width: 635px) {
-            flex-direction: column-reverse;
-            align-items: flex-start;
-            padding: 32px;
         }
     }
 

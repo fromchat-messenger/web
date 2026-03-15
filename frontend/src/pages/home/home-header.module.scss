@@ -1,0 +1,89 @@
+@use "../../css/material" as *;
+@use "home-shared" as shared;
+
+.homepageHeader {
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.headerInner {
+    max-width: 960px;
+    width: 100%;
+    padding: 16px 24px;
+    background: rgba($color-dark-surface, 0.8);
+    backdrop-filter: blur(10px);
+    border-radius: 30px;
+}
+
+.headerContent {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logoIcon {
+    width: 40px;
+    height: 40px;
+    background-image: url('../../images/logo_square.svg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    border-radius: 12px;
+}
+
+.logo h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin: 0;
+    @include shared.gradient-text;
+}
+
+.headerCenterLinks {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    @media (max-width: 730px) {
+        display: none;
+    }
+
+    a {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+}
+
+.headerButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.headerDownloadButton {
+    display: block;
+}
+
+.headerSmallButton {
+    display: none;
+}
+
+@media (max-width: 450px) {
+    .headerSmallButton {
+        display: block;
+    }
+
+    .headerDownloadButton {
+        display: none;
+    }
+}

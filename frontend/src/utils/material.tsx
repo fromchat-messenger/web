@@ -17,6 +17,7 @@ import 'mdui/components/button';
 import 'mdui/components/text-field';
 import 'mdui/components/button-icon';
 import 'mdui/components/switch';
+import 'mdui/components/ripple';
 import 'mdui/components/chip';
 import 'mdui/components/badge';
 import "mdui/mdui.css";
@@ -29,6 +30,7 @@ import type { Switch } from 'mdui/components/switch';
 import type { Override } from '@/core/types';
 import type { Button } from 'mdui/components/button';
 import type { ButtonIcon } from 'mdui/components/button-icon';
+import type { Ripple } from 'mdui/components/ripple';
 import type { Icon } from 'mdui/components/icon';
 import type { Fab } from 'mdui/components/fab';
 import type { Tabs } from 'mdui/components/tabs';
@@ -58,6 +60,7 @@ export type MDUISwitch = Override<HTMLElement, Switch>;
 export type MDUIButton = Override<HTMLElement, Button>;
 export type MDUIButtonIcon = Override<HTMLElement, ButtonIcon>;
 export type MDUIIcon = Override<HTMLElement, Icon>;
+export type MDUIRipple = Override<HTMLElement, Ripple>;
 export type MDUIFab = Override<HTMLElement, Fab>;
 export type MDUITabs = Override<HTMLElement, Tabs>;
 export type MDUITab = Override<HTMLElement, Tab>;
@@ -140,4 +143,10 @@ export function MaterialCircularProgress(props: MaterialCircularProgressProps) {
 export type MaterialBottomAppBarProps = BasePropCustomization<"mdui-bottom-app-bar", MDUIBottomAppBar>;
 export function MaterialBottomAppBar(props: MaterialBottomAppBarProps) {
     return <mdui-bottom-app-bar {...props as ComponentProps<"mdui-bottom-app-bar">} />
+}
+
+export type MaterialRippleProps = BasePropCustomization<"div", MDUIRipple>;
+export function MaterialRipple(props: MaterialRippleProps) {
+    // Wrapper component for future custom ripple usage; MDUI buttons already include real ripple.
+    return <div {...props as ComponentProps<"div">} />;
 }

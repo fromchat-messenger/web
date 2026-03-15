@@ -1,0 +1,11 @@
+@use "../../css/material" as *;
+
+$gradient-rainbow: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
+$glow-purple: rgba(147, 51, 234, 0.5);
+
+@mixin gradient-text {
+    background: $gradient-rainbow;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 20px $glow-purple;
+}

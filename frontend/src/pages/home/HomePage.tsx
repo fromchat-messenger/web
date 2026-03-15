@@ -1,53 +1,13 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useUserStore } from "@/state/user";
+import { useNavigate } from "react-router-dom";
+import type { ReactNode } from "react";
 import styles from "./home.module.scss";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
-import { MaterialButton, MaterialIcon, MaterialIconButton } from "@/utils/material";
+import { MaterialButton, MaterialIcon } from "@/utils/material";
 import generalChatScreenshot from "../../images/screenshots/general-chat.png";
 import dmScreenshot from "../../images/screenshots/dm.png";
-import type { ReactNode } from "react";
-
-const GITHUB_WEB = "https://github.com/fromchat-messenger/web";
-const GITHUB_APP = "https://github.com/fromchat-messenger/app";
-const GITHUB_LICENSE = `${GITHUB_WEB}/blob/main/LICENSE`;
-
-function GitHubLink({
-    children,
-    className,
-}: {
-    children: React.ReactNode;
-    className?: string;
-}) {
-    return (
-        <a
-            href={`${GITHUB_WEB}/tree/main`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={className}
-        >
-            {children}
-        </a>
-    );
-}
-
-function SupportLink({
-    children,
-    className,
-}: {
-    children: React.ReactNode;
-    className?: string;
-}) {
-    return (
-        <a
-            href="https://t.me/denis0001-dev"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={className}
-        >
-            {children}
-        </a>
-    );
-}
+import { HomeHeader } from "./HomeHeader";
+import { HomeFooter } from "./HomeFooter";
+import { OS_CONFIG, ALL_OS } from "@/core/downloads/os";
 
 interface FeatureSectionProps {
     title: ReactNode;
@@ -85,64 +45,11 @@ function FeatureSection({
 
 export default function HomePage() {
     const navigate = useNavigate();
-    const { user } = useUserStore();
     const { isMobile } = useDownloadAppScreen();
-    const isLoggedIn = user.authToken && user.currentUser;
-
-    function handleGetStarted() {
-        if (isMobile) {
-            navigate("/download-app");
-        } else if (isLoggedIn) {
-            navigate("/chat");
-        } else {
-            navigate("/login");
-        }
-    }
-
-    const openBtn = (
-        <MaterialButton
-            variant="filled"
-            onClick={handleGetStarted}
-            icon={
-                isMobile ? "download" : isLoggedIn ? "open_in_new" : "login"
-            }
-            className={styles.headerDownloadButton}
-        >
-            {isMobile ? "Скачать" : isLoggedIn ? "Открыть" : "Войти"}
-        </MaterialButton>
-    );
 
     return (
         <div className={styles.homepage}>
-            <header className={styles.homepageHeader}>
-                <div className={styles.headerInner}>
-                    <div className={styles.headerContent}>
-                        <div className={styles.logo}>
-                            <div className={styles.logoIcon} />
-                            <h1>FromChat</h1>
-                        </div>
-                        <div className={styles.headerCenterLinks}>
-                            <GitHubLink>
-                                <MaterialButton variant="text" icon="code">GitHub</MaterialButton>
-                            </GitHubLink>
-                            <SupportLink>
-                                <MaterialButton variant="text" icon="support">Поддержка</MaterialButton>
-                            </SupportLink>
-                        </div>
-                        <div className={styles.headerButton}>
-                            {openBtn}
-                            {isMobile ? (
-                                <MaterialIconButton 
-                                    variant="filled" 
-                                    onClick={() => navigate("/download-app")} 
-                                    icon="download" 
-                                    className={styles.headerSmallButton} 
-                                />
-                            ) : null}
-                        </div>
-                    </div>
-                </div>
-            </header>
+            <HomeHeader />
 
             <main>
                 <section className={styles.title}>
@@ -155,9 +62,9 @@ export default function HomePage() {
                     </div>
                     <div className={styles.titleButtons}>
                         {isMobile ? null : (
-                            <MaterialButton 
-                                variant="filled" 
-                                onClick={() => navigate("/auth?mode=login")} 
+                            <MaterialButton
+                                variant="filled"
+                                onClick={() => navigate("/auth?mode=login")}
                                 icon="devices"
                             >
                                 Открыть веб-версию
@@ -193,77 +100,42 @@ export default function HomePage() {
                         <div className={styles.downloadContent}>
                             <h3>Скачайте приложение</h3>
                             <p>
-                                Для лучшего опыта используйте настольное приложение с уведомлениями
-                                и автономной работой или мобильное приложение для Android.
+                                Настольное приложение с уведомлениями и автономной работой
+                                или мобильное приложение для Android и iOS.
                             </p>
-                            <div className={styles.downloadPlatforms}>
-                                {!isMobile ? (
-                                    <>
-                                        <a
-                                            href={`${GITHUB_WEB}/actions/workflows/build.yml`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className={styles.downloadCard}
-                                        >
-                                            <MaterialIcon name="computer" className={styles.downloadCardIcon} />
-                                            <span className={styles.downloadCardTitle}>Для ПК</span>
-                                            <span className={styles.downloadCardDesc}>Windows, macOS, Linux</span>
-                                            <MaterialButton variant="filled" className={styles.downloadCardBtn}>
-                                                <MaterialIcon name="download" slot="icon" />
-                                                Скачать
-                                            </MaterialButton>
-                                        </a>
-                                        <a
-                                            href={`${GITHUB_APP}/releases/latest`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className={styles.downloadCard}
-                                        >
-                                            <MaterialIcon name="android" className={styles.downloadCardIcon} />
-                                            <span className={styles.downloadCardTitle}>Android</span>
-                                            <span className={styles.downloadCardDesc}>APK на GitHub</span>
-                                            <MaterialButton variant="outlined" className={styles.downloadCardBtn}>
-                                                <MaterialIcon name="download" slot="icon" />
-                                                Скачать
-                                            </MaterialButton>
-                                        </a>
-                                        <div className={styles.downloadCard}>
+                            <div className={styles.downloadTable}>
+                                <div className={styles.downloadTableHeader}>
+                                    <span>Платформа</span>
+                                    <span>Описание</span>
+                                    <span />
+                                </div>
+                                {ALL_OS.map((os) => (
+                                    <div key={os} className={styles.downloadTableRow}>
+                                        <div className={styles.downloadTableOs}>
                                             <MaterialIcon
-                                                name="language"
-                                                className={styles.downloadCardIcon}
+                                                name={OS_CONFIG[os].icon}
+                                                className={styles.downloadTableIcon}
                                             />
-                                            <span className={styles.downloadCardTitle}>
-                                                Веб-версия
-                                            </span>
-                                            <span className={styles.downloadCardDesc}>
-                                                Без установки
-                                            </span>
-                                            <MaterialButton
-                                                variant="outlined"
-                                                className={styles.downloadCardBtn}
-                                                onClick={() => navigate("/login")}
-                                            >
-                                                <MaterialIcon name="open_in_new" slot="icon" />
-                                                Открыть
-                                            </MaterialButton>
+                                            <span>{OS_CONFIG[os].label}</span>
                                         </div>
-                                    </>
-                                ) : (
-                                    <a
-                                        href={`${GITHUB_APP}/releases/latest`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className={styles.downloadCard}
-                                    >
-                                        <MaterialIcon name="android" className={styles.downloadCardIcon} />
-                                        <span className={styles.downloadCardTitle}>Android</span>
-                                        <span className={styles.downloadCardDesc}>Скачайте APK на GitHub</span>
-                                        <MaterialButton variant="filled" className={styles.downloadCardBtn}>
-                                            <MaterialIcon name="download" slot="icon" />
-                                            Скачать приложение
-                                        </MaterialButton>
-                                    </a>
-                                )}
+                                        <span className={styles.downloadTableDesc}>
+                                            {OS_CONFIG[os].description}
+                                        </span>
+                                        <div className={styles.downloadTableAction}>
+                                            <a
+                                                href={`/api/download/${os}`}
+                                                className={styles.downloadTableActionLink}
+                                            >
+                                                <MaterialButton
+                                                    variant="outlined"
+                                                    icon="download"
+                                                >
+                                                    Скачать
+                                                </MaterialButton>
+                                            </a>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
@@ -302,84 +174,7 @@ export default function HomePage() {
                 </section>
             </main>
 
-            <footer className={styles.homepageFooter}>
-                <div className={styles.footerBrand}>
-                    <div className={styles.footerLogoRow}>
-                        <div className={styles.footerLogo} />
-                        <span className={styles.footerBrandName}>FromChat</span>
-                    </div>
-                    <p className={styles.footerCopyright}>FromChat © 2026</p>
-                </div>
-                <div className={styles.footerLinks}>
-                    <div className={styles.footerSection}>
-                        <Link to="/download-app" className={styles.footerLink}>
-                            <MaterialIcon name="download" className={styles.footerLinkIcon} />
-                            Скачать приложение
-                        </Link>
-                        <Link to="/login" className={styles.footerLink}>
-                            <MaterialIcon name="language" className={styles.footerLinkIcon} />
-                            Веб-версия
-                        </Link>
-                        <a
-                            href={`${GITHUB_WEB}/actions/workflows/build.yml`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.footerLink}
-                        >
-                            <MaterialIcon name="computer" className={styles.footerLinkIcon} />
-                            ПК-клиент
-                        </a>
-                    </div>
-                    <div className={styles.footerSection}>
-                        <a
-                            href={`${GITHUB_APP}/tree/main`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.footerLink}
-                        >
-                            <MaterialIcon name="android" className={styles.footerLinkIcon} />
-                            Исходный код приложения
-                        </a>
-                        <GitHubLink className={styles.footerLink}>
-                            <MaterialIcon name="code" className={styles.footerLinkIcon} />
-                            Исходный код веб-версии
-                        </GitHubLink>
-                        <a
-                            href={GITHUB_LICENSE}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.footerLink}
-                        >
-                            <MaterialIcon name="description" className={styles.footerLinkIcon} />
-                            Лицензия
-                        </a>
-                    </div>
-                    <div className={styles.footerSection}>
-                        <a
-                            href="https://t.me/fromchat_ch"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.footerLink}
-                        >
-                            <span
-                                className={`${styles.footerLinkIcon} ${styles.footerLinkIconSvg} ${styles.footerLinkIconSvgTelegram}`}
-                            />
-                            Telegram
-                        </a>
-                        <a
-                            href="https://max.ru/join/c5t6LfnCCPetQSAOshmouEvq9vsjHZT_Lt63kw8YCg0"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.footerLink}
-                        >
-                            <span
-                                className={`${styles.footerLinkIcon} ${styles.footerLinkIconSvg} ${styles.footerLinkIconSvgMax}`}
-                            />
-                            MAX
-                        </a>
-                    </div>
-                </div>
-            </footer>
+            <HomeFooter />
         </div>
     );
 }
