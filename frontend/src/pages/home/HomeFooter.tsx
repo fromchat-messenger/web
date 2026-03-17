@@ -15,7 +15,7 @@ export function HomeFooter() {
             </div>
             <div className={styles.footerLinks}>
                 <div className={styles.footerSection}>
-                    <Link to="/download" className={styles.footerLink}>
+                    <Link to="/#download" className={styles.footerLink}>
                         <MaterialIcon name="download" className={styles.footerLinkIcon} />
                         Скачать приложение
                     </Link>

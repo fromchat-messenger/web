@@ -339,6 +339,21 @@ $radius-pill: 9999px;
     }
 }
 
+.menuCustomIcon {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    background-color: $color-dark-on-surface-variant;
+    mask-image: var(--menu-custom-icon-url);
+    -webkit-mask-image: var(--menu-custom-icon-url);
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+}
+
 // Keyframes for animations
 @keyframes neonGlow {
     0% {

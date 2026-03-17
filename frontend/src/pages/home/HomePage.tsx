@@ -1,13 +1,18 @@
 import { useNavigate } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import styles from "./home.module.scss";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
-import { MaterialButton, MaterialIcon } from "@/utils/material";
+import { MaterialButton, MaterialIcon, MaterialList, MaterialListItem } from "@/utils/material";
 import generalChatScreenshot from "../../images/screenshots/general-chat.png";
 import dmScreenshot from "../../images/screenshots/dm.png";
+import windowsIcon from "../../images/windows.svg";
+import linuxIcon from "../../images/linux.svg";
+import macIcon from "../../images/mac.svg";
 import { HomeHeader } from "./HomeHeader";
 import { HomeFooter } from "./HomeFooter";
-import { OS_CONFIG, ALL_OS } from "@/core/downloads/os";
+import { SplitButton } from "@/core/components/SplitButton";
+import { DownloadDialog } from "@/core/components/DownloadDialog";
+import { OS_CONFIG, ALL_OS, detectOs, type DownloadOs } from "@/core/downloads/os";
 
 interface FeatureSectionProps {
     title: ReactNode;
@@ -47,6 +52,28 @@ export default function HomePage() {
     const navigate = useNavigate();
     const { isMobile } = useDownloadAppScreen();
 
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogOs, setDialogOs] = useState<DownloadOs>(() => detectOs());
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    const triggerDownload = (os: DownloadOs): boolean => {
+        if (typeof document === "undefined") {
+            return false;
+        }
+
+        setDialogOs(os);
+        setDialogOpen(true);
+
+        const link = document.createElement("a");
+        link.href = `/api/download/${os}`;
+        link.download = "";
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return true;
+    };
+
     return (
         <div className={styles.homepage}>
             <HomeHeader />
@@ -70,13 +97,39 @@ export default function HomePage() {
                                 Открыть веб-версию
                             </MaterialButton>
                         )}
-                        <MaterialButton
-                            variant={isMobile ? "filled" : "outlined"}
-                            onClick={() => navigate("/download-app")}
+                        <SplitButton
+                            variant={isMobile ? "filled" : "tonal"}
+                            text="Скачать приложение"
                             icon="download"
-                        >
-                            Скачать приложение
-                        </MaterialButton>
+                            onPrimaryClick={() => triggerDownload(detectOs())}
+                            menuOpen={menuOpen}
+                            onMenuOpen={setMenuOpen}
+                            menu={(
+                                <MaterialList>
+                                    {ALL_OS.map((os) => (
+                                        <MaterialListItem
+                                            key={os}
+                                            icon={["windows", "linux", "macos"].includes(os) ? undefined : OS_CONFIG[os].icon}
+                                            headline={OS_CONFIG[os].label}
+                                            rounded
+                                            onClick={() => {
+                                                if (triggerDownload(os)) setMenuOpen(false);
+                                            }}
+                                        >
+                                            {["windows", "linux", "macos"].includes(os) && (
+                                                <span
+                                                    slot="icon"
+                                                    className={styles.menuCustomIcon}
+                                                    style={{
+                                                        "--menu-custom-icon-url": `url("${os === "windows" ? windowsIcon : os === "linux" ? linuxIcon : macIcon}")`,
+                                                    } as React.CSSProperties}
+                                                />
+                                            )}
+                                        </MaterialListItem>
+                                    ))}
+                                </MaterialList>
+                            )}
+                        />
                     </div>
                 </section>
 
@@ -95,7 +148,7 @@ export default function HomePage() {
                     </FeatureSection>
                 </section>
 
-                <section className={styles.download}>
+                <section id="download" className={styles.download}>
                     <div className={styles.container}>
                         <div className={styles.downloadContent}>
                             <h3>Скачайте приложение</h3>
@@ -122,17 +175,13 @@ export default function HomePage() {
                                             {OS_CONFIG[os].description}
                                         </span>
                                         <div className={styles.downloadTableAction}>
-                                            <a
-                                                href={`/api/download/${os}`}
-                                                className={styles.downloadTableActionLink}
+                                            <MaterialButton
+                                                variant="outlined"
+                                                icon="download"
+                                                onClick={() => triggerDownload(os)}
                                             >
-                                                <MaterialButton
-                                                    variant="outlined"
-                                                    icon="download"
-                                                >
-                                                    Скачать
-                                                </MaterialButton>
-                                            </a>
+                                                Скачать
+                                            </MaterialButton>
                                         </div>
                                     </div>
                                 ))}
@@ -174,6 +223,7 @@ export default function HomePage() {
                 </section>
             </main>
 
+            <DownloadDialog open={dialogOpen} onOpenChange={setDialogOpen} os={dialogOs} />
             <HomeFooter />
         </div>
     );

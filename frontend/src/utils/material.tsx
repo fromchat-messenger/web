@@ -23,8 +23,9 @@ import 'mdui/components/badge';
 import "mdui/mdui.css";
 import 'mdui/components/circular-progress';
 
+import { useCallback, useRef } from "react";
 import { setColorScheme } from 'mdui/functions/setColorScheme';
-import type { ChangeEventHandler, ComponentProps, ComponentPropsWithoutRef, FormEventHandler, Ref } from 'react';
+import type { ChangeEventHandler, ComponentProps, ComponentPropsWithoutRef, FormEventHandler, Ref, RefObject } from 'react';
 import type { TextField } from 'mdui/components/text-field';
 import type { Switch } from 'mdui/components/switch';
 import type { Override } from '@/core/types';
@@ -145,8 +146,67 @@ export function MaterialBottomAppBar(props: MaterialBottomAppBarProps) {
     return <mdui-bottom-app-bar {...props as ComponentProps<"mdui-bottom-app-bar">} />
 }
 
-export type MaterialRippleProps = BasePropCustomization<"div", MDUIRipple>;
+export type MaterialRippleProps = NoChildren<BasePropCustomization<"mdui-ripple", MDUIRipple>>;
 export function MaterialRipple(props: MaterialRippleProps) {
-    // Wrapper component for future custom ripple usage; MDUI buttons already include real ripple.
-    return <div {...props as ComponentProps<"div">} />;
+    return <mdui-ripple {...props as ComponentProps<"mdui-ripple">} />
+}
+
+/**
+ * Returns pointer handlers that forward press and hover events to an mdui-ripple element.
+ * Pass the returned ref to MaterialRipple and spread the handlers onto the container (e.g. button).
+ *
+ * @example
+ * const { rippleRef, ...rippleHandlers } = useRippleHandlers(disabled);
+ * <button {...rippleHandlers}>
+ *   <MaterialRipple ref={rippleRef} />
+ *   ...
+ * </button>
+ */
+export function useRippleHandlers(
+    disabled = false
+): {
+    rippleRef: RefObject<MDUIRipple | null>;
+    onPointerDown: (e: React.PointerEvent) => void;
+    onPointerEnter: (e: React.PointerEvent) => void;
+    onPointerLeave: (e: React.PointerEvent) => void;
+} {
+    const rippleRef = useRef<MDUIRipple | null>(null);
+
+    const onPointerDown = useCallback(
+        (e: React.PointerEvent) => {
+            if (disabled || e.button !== 0) return;
+            const ripple = rippleRef.current;
+            if (!ripple?.startPress) return;
+            ripple.startPress(e.nativeEvent);
+            const btn = e.currentTarget as HTMLElement;
+            const endPress = () => {
+                ripple.endPress?.();
+                btn.removeEventListener("pointerup", endPress);
+                btn.removeEventListener("pointercancel", endPress);
+                btn.removeEventListener("pointerleave", endPress);
+            };
+            btn.addEventListener("pointerup", endPress);
+            btn.addEventListener("pointercancel", endPress);
+            btn.addEventListener("pointerleave", endPress);
+        },
+        [disabled]
+    );
+
+    const onPointerEnter = useCallback(
+        (e: React.PointerEvent) => {
+            if (disabled || e.pointerType !== "mouse") return;
+            rippleRef.current?.startHover?.();
+        },
+        [disabled]
+    );
+
+    const onPointerLeave = useCallback(
+        (e: React.PointerEvent) => {
+            if (disabled || e.pointerType !== "mouse") return;
+            rippleRef.current?.endHover?.();
+        },
+        [disabled]
+    );
+
+    return { rippleRef, onPointerDown, onPointerEnter, onPointerLeave };
 }
