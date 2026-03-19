@@ -212,6 +212,7 @@ $radius-pill: 9999px;
                 }
 
                 .downloadTable {
+                    user-select: none;
                     width: 100%;
                     max-width: 720px;
                     margin: 0 auto;
