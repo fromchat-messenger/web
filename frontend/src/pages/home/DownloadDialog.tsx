@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { StyledDialog } from "./StyledDialog";
+import { StyledDialog } from "@/core/components/StyledDialog";
 import { MaterialButton, MaterialIcon } from "@/utils/material";
-import { OS_CONFIG, type DownloadOs } from "@/core/downloads/os";
-import styles from "./css/download-dialog.module.scss";
+import { OS_CONFIG, type DownloadOs } from "@/pages/home/os";
+import styles from "@/pages/home/download-dialog.module.scss";
 
 interface DownloadDialogProps {
     open: boolean;
@@ -98,7 +98,7 @@ export function DownloadDialog({ open, onOpenChange, os }: DownloadDialogProps) 
                         <MaterialIcon name="download" className={styles.icon} />
                     </div>
                     <div className={styles.titleBlock}>
-                        <h2 className={styles.title}>Thanks for downloading</h2>
+                        <h2 className={styles.title}>Спасибо за скачивание!</h2>
                         <p className={styles.subtitle}>
                             FromChat для&nbsp;
                             <span className={styles.osName}>{osInfo.label}</span>
@@ -110,4 +110,3 @@ export function DownloadDialog({ open, onOpenChange, os }: DownloadDialogProps) 
         </StyledDialog>
     );
 }
-

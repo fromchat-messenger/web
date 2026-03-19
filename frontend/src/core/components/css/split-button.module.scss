@@ -224,4 +224,8 @@ $menu-padding: 8px;
 
     scrollbar-width: thin;
     scrollbar-color: rgba($color-dark-on-surface, 0.25) transparent;
+
+    mdui-list {
+        padding: 0;
+    }
 }

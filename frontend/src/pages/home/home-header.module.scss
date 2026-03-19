@@ -1,4 +1,4 @@
-@use "../../css/material" as *;
+@use "@/css/material" as *;
 @use "home-shared" as shared;
 
 .homepageHeader {
@@ -35,7 +35,7 @@
 .logoIcon {
     width: 40px;
     height: 40px;
-    background-image: url('../../images/logo_square.svg');
+    background-image: url('@/images/logo_square.svg');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;

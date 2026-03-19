@@ -40,7 +40,6 @@ export function SplitButton({
         top?: number;
         bottom?: number;
         left: number;
-        transform: string;
         maxHeight: number;
     } | null>(null);
     const { width: windowWidth, height: windowHeight } = useWindowSize();
@@ -58,9 +57,8 @@ export function SplitButton({
         const menuWidth = menuEl?.offsetWidth ?? 220;
         const menuHeight = menuEl?.offsetHeight ?? 320;
 
-        const anchorX = rect.left + rect.width / 2;
+        const anchorCenterX = rect.left + rect.width / 2;
         let left: number;
-        let transform: string;
         let top: number | undefined;
         let bottom: number | undefined;
         let maxHeight: number;
@@ -82,18 +80,15 @@ export function SplitButton({
             maxHeight = Math.max(100, availableBelow);
         }
 
-        if (anchorX - menuWidth / 2 < EDGE_PAD) {
+        if (anchorCenterX - menuWidth / 2 < EDGE_PAD) {
             left = EDGE_PAD;
-            transform = "none";
-        } else if (anchorX + menuWidth / 2 > vw - EDGE_PAD) {
+        } else if (anchorCenterX + menuWidth / 2 > vw - EDGE_PAD) {
             left = vw - menuWidth - EDGE_PAD;
-            transform = "none";
         } else {
-            left = anchorX;
-            transform = "translateX(-50%)";
+            left = anchorCenterX - menuWidth / 2;
         }
 
-        setMenuPosition({ top, bottom, left, transform, maxHeight });
+        setMenuPosition({ top, bottom, left, maxHeight });
     }, []);
 
     const closeMenu = useCallback(() => {
@@ -245,7 +240,6 @@ export function SplitButton({
                                         ? { bottom: menuPosition.bottom }
                                         : { top: menuPosition.top }),
                                     left: menuPosition.left,
-                                    transform: menuPosition.transform,
                                     maxHeight: menuPosition.maxHeight,
                                     overflowY: "auto",
                                 }}

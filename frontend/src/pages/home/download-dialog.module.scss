@@ -1,5 +1,5 @@
-@use "../../../css/material" as *;
-@use "../../../css/colors" as *;
+@use "@/css/material" as *;
+@use "@/css/colors" as *;
 @use "sass:color";
 
 .downloadDialog {
@@ -111,4 +111,3 @@
         padding-inline: 16px;
     }
 }
-

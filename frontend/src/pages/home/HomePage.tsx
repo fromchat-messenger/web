@@ -1,18 +1,18 @@
 import { useNavigate } from "react-router-dom";
 import { useState, type ReactNode } from "react";
-import styles from "./home.module.scss";
+import styles from "@/pages/home/home.module.scss";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
-import { MaterialButton, MaterialIcon, MaterialList, MaterialListItem } from "@/utils/material";
-import generalChatScreenshot from "../../images/screenshots/general-chat.png";
-import dmScreenshot from "../../images/screenshots/dm.png";
-import windowsIcon from "../../images/windows.svg";
-import linuxIcon from "../../images/linux.svg";
-import macIcon from "../../images/mac.svg";
-import { HomeHeader } from "./HomeHeader";
-import { HomeFooter } from "./HomeFooter";
+import { MaterialButton, MaterialIcon, MaterialIconButton, MaterialList, MaterialListItem } from "@/utils/material";
+import generalChatScreenshot from "@/images/screenshots/general-chat.png";
+import dmScreenshot from "@/images/screenshots/dm.png";
+import windowsIcon from "@/images/windows.svg";
+import linuxIcon from "@/images/linux.svg";
+import macIcon from "@/images/mac.svg";
+import { HomeHeader } from "@/pages/home/HomeHeader";
+import { HomeFooter } from "@/pages/home/HomeFooter";
 import { SplitButton } from "@/core/components/SplitButton";
-import { DownloadDialog } from "@/core/components/DownloadDialog";
-import { OS_CONFIG, ALL_OS, detectOs, type DownloadOs } from "@/core/downloads/os";
+import { DownloadDialog } from "@/pages/home/DownloadDialog";
+import { OS_CONFIG, ALL_OS, detectOs, type DownloadOs } from "@/pages/home/os";
 
 interface FeatureSectionProps {
     title: ReactNode;
@@ -72,6 +72,14 @@ export default function HomePage() {
         link.click();
         document.body.removeChild(link);
         return true;
+    };
+
+    const getButtonVariant = (os: DownloadOs): "filled" | "tonal" | "outlined" => {
+        const detectedOs = detectOs();
+        if (os === detectedOs) return "filled";
+        if (!isMobile && ["windows", "linux", "macos"].includes(os)) return "tonal";
+        if (isMobile && (os === "android" || os === "ios") && os !== detectedOs) return "tonal";
+        return "outlined";
     };
 
     return (
@@ -156,36 +164,63 @@ export default function HomePage() {
                                 Настольное приложение с уведомлениями и автономной работой
                                 или мобильное приложение для Android и iOS.
                             </p>
-                            <div className={styles.downloadTable}>
-                                <div className={styles.downloadTableHeader}>
-                                    <span>Платформа</span>
-                                    <span>Описание</span>
-                                    <span />
-                                </div>
-                                {ALL_OS.map((os) => (
-                                    <div key={os} className={styles.downloadTableRow}>
-                                        <div className={styles.downloadTableOs}>
-                                            <MaterialIcon
-                                                name={OS_CONFIG[os].icon}
-                                                className={styles.downloadTableIcon}
-                                            />
-                                            <span>{OS_CONFIG[os].label}</span>
-                                        </div>
-                                        <span className={styles.downloadTableDesc}>
-                                            {OS_CONFIG[os].description}
-                                        </span>
-                                        <div className={styles.downloadTableAction}>
-                                            <MaterialButton
-                                                variant="outlined"
-                                                icon="download"
-                                                onClick={() => triggerDownload(os)}
-                                            >
-                                                Скачать
-                                            </MaterialButton>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            <table className={styles.downloadTable}>
+                                <thead>
+                                    <tr>
+                                        <th>Платформа</th>
+                                        <th>Описание</th>
+                                        <th />
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {ALL_OS.map((os) => (
+                                        <tr key={os}>
+                                            <td className={styles.downloadTableOs}>
+                                                <span className={styles.downloadTableOsContent}>
+                                                    {["windows", "linux", "macos"].includes(os) ? (
+                                                        <span
+                                                            className={styles.tableOsIcon}
+                                                            style={{
+                                                                "--table-os-icon-url": `url("${os === "windows" ? windowsIcon : os === "linux" ? linuxIcon : macIcon}")`,
+                                                            } as React.CSSProperties}
+                                                        />
+                                                    ) : (
+                                                        <MaterialIcon
+                                                            name={OS_CONFIG[os].icon}
+                                                            className={styles.downloadTableIcon}
+                                                        />
+                                                    )}
+                                                    <span>{OS_CONFIG[os].label}</span>
+                                                </span>
+                                            </td>
+                                            <td className={styles.downloadTableDesc}>
+                                                <span className={styles.downloadTableDescInner}>
+                                                    {OS_CONFIG[os].description}
+                                                </span>
+                                            </td>
+                                            <td className={styles.downloadTableAction}>
+                                                <span className={styles.downloadTableActionInner}>
+                                                    <MaterialButton
+                                                        variant={getButtonVariant(os)}
+                                                        icon="download"
+                                                        className={styles.downloadButton}
+                                                        onClick={() => triggerDownload(os)}
+                                                    >
+                                                        Скачать
+                                                    </MaterialButton>
+                                                    <MaterialIconButton
+                                                        variant={getButtonVariant(os)}
+                                                        icon="download"
+                                                        className={styles.downloadButtonIcon}
+                                                        onClick={() => triggerDownload(os)}
+                                                        title={`Скачать ${OS_CONFIG[os].label}`}
+                                                    />
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </section>

@@ -1,4 +1,4 @@
-@use "../../css/material" as *;
+@use "@/css/material" as *;
 @use "home-shared" as shared;
 
 .homepageFooter {
@@ -37,7 +37,7 @@
 .footerLogo {
     width: 40px;
     height: 40px;
-    background-image: url('../../images/logo_square.svg');
+    background-image: url('@/images/logo_square.svg');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -111,11 +111,11 @@
 }
 
 .footerLinkIconSvgTelegram {
-    mask-image: url('../../images/telegram.svg');
-    -webkit-mask-image: url('../../images/telegram.svg');
+    mask-image: url('@/images/telegram.svg');
+    -webkit-mask-image: url('@/images/telegram.svg');
 }
 
 .footerLinkIconSvgMax {
-    mask-image: url('../../images/max.svg');
-    -webkit-mask-image: url('../../images/max.svg');
+    mask-image: url('@/images/max.svg');
+    -webkit-mask-image: url('@/images/max.svg');
 }

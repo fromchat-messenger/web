@@ -1,4 +1,4 @@
-@use "../../css/material" as *;
+@use "@/css/material" as *;
 @use "home-shared" as shared;
 
 // Shared variables (home-specific)
@@ -15,7 +15,18 @@ $gradient-conic: conic-gradient(
     rgba(147, 51, 234, 0.5) 100%
 );
 $radius-card: 20px;
-$radius-pill: 9999px;
+$radius-pill: 25px;
+
+// Download table variables
+$download-cell-padding: 14px 20px;
+$download-cell-gap: 12px;
+$download-icon-size: 24px;
+$download-col1-w: 35%;
+$download-col2-w: 30%;
+$download-col3-w: 35%;
+$download-row-bg-hover: rgba($color-dark-surface-container-high, 0.6);
+$download-header-bg: rgba($color-dark-surface-container-high, 0.4);
+$download-text-color: $color-dark-on-surface-variant;
 
 // Mixins
 @mixin section-heading {
@@ -42,6 +53,30 @@ $radius-pill: 9999px;
     max-width: 960px;
     margin: 0 auto;
     padding: 0 32px;
+}
+
+@mixin download-cell-inner($justify) {
+    display: flex;
+    justify-content: $justify;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
+@mixin masked-icon($url-var) {
+    display: inline-block;
+    width: $download-icon-size;
+    height: $download-icon-size;
+    flex-shrink: 0;
+    background-color: $download-text-color;
+    mask-image: var(#{$url-var});
+    -webkit-mask-image: var(#{$url-var});
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
 }
 
 .homepage {
@@ -96,7 +131,7 @@ $radius-pill: 9999px;
             .titleLogo {
                 width: 120px;
                 height: 120px;
-                background-image: url('../../images/logo_square.svg');
+                background-image: url('@/images/logo_square.svg');
                 background-size: cover;
                 background-position: center;
                 background-repeat: no-repeat;
@@ -212,66 +247,169 @@ $radius-pill: 9999px;
                 }
 
                 .downloadTable {
+                    display: table;
                     user-select: none;
                     width: 100%;
                     max-width: 720px;
                     margin: 0 auto;
-                    border-radius: 20px;
-                    background: rgba($color-dark-surface-container, 0.8);
-                    border: 1px solid rgba($color-dark-outline, 0.3);
-                    padding: 8px 16px;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 4px;
-                }
+                    border-radius: 16px;
+                    border-collapse: separate;
+                    border-spacing: 0 6px;
+                    background: transparent;
+                    border: none;
+                    table-layout: auto;
 
-                .downloadTableHeader {
-                    display: grid;
-                    grid-template-columns: 2fr 2fr auto;
-                    padding: 8px 4px;
-                    font-size: 12px;
-                    text-transform: uppercase;
-                    letter-spacing: 0.08em;
-                    color: $color-dark-on-surface-variant;
-                }
+                    th:first-child,
+                    td:first-child {
+                        width: 1%;
+                        white-space: nowrap;
+                    }
 
-                .downloadTableRow {
-                    display: grid;
-                    grid-template-columns: 2fr 2fr auto;
-                    align-items: center;
-                    padding: 8px 4px;
-                    border-radius: 12px;
-                    &:hover {
-                        background-color: rgba($color-dark-surface-container-high, 0.8);
+                    th:nth-child(2),
+                    td:nth-child(2) {
+                        width: 1%;
+                        white-space: nowrap;
+                    }
+
+                    th:last-child,
+                    td:last-child {
+                        width: 100%;
+                    }
+
+                    thead {
+                        display: table-header-group;
+
+                        tr th {
+                            padding: $download-cell-padding;
+                            display: table-cell;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-transform: uppercase;
+                            letter-spacing: 0.1em;
+                            color: $download-text-color;
+                            background: $download-header-bg;
+                            vertical-align: middle;
+                            transition: background-color 0.2s ease;
+                            text-align: left;
+
+                            &:first-child {
+                                border-radius: 12px 0 0 12px;
+                            }
+
+                            &:last-child {
+                                border-radius: 0 12px 12px 0;
+                            }
+                        }
+                    }
+
+                    tbody {
+                        display: table-row-group;
+
+                        tr {
+                            display: table-row;
+                            background: $color-dark-surface-container-low;
+
+                            td {
+                                padding: $download-cell-padding;
+                                display: table-cell;
+                                text-align: center;
+                                vertical-align: middle;
+                                transition: background-color 0.2s ease;
+                                background: transparent;
+
+                                &:first-child {
+                                    text-align: left;
+                                    border-radius: $radius-pill 0 0 $radius-pill;
+                                }
+
+                                &:last-child {
+                                    text-align: right;
+                                    border-radius: 0 $radius-pill $radius-pill 0;
+                                }
+                            }
+
+                            &:hover td {
+                                background: $download-row-bg-hover;
+                            }
+                        }
+                    }
+
+                    .downloadTableOs {
+                        text-align: left;
+
+                        .downloadTableOsContent {
+                            @include download-cell-inner(flex-start);
+                            gap: $download-cell-gap;
+                            min-height: 100%;
+                            height: 100%;
+                        }
+                    }
+
+                    .downloadTableIcon {
+                        font-size: $download-icon-size;
+                        width: $download-icon-size;
+                        height: $download-icon-size;
+                        color: $download-text-color;
+                    }
+
+                    .tableOsIcon {
+                        @include masked-icon("--table-os-icon-url");
+                    }
+
+                    .downloadTableDesc {
+                        font-size: 14px;
+                        color: $download-text-color;
+
+                        .downloadTableDescInner {
+                            @include download-cell-inner(flex-start);
+                        }
+                    }
+
+                    .downloadTableAction {
+                        text-align: right;
+
+                        .downloadTableActionInner {
+                            @include download-cell-inner(flex-end);
+                        }
+                    }
+
+                    .downloadButton {
+                        display: block;
+                    }
+
+                    .downloadButtonIcon {
+                        display: none;
                     }
                 }
+            }
 
-                .downloadTableOs {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
+            @media (max-width: 490px) {
+                .downloadContent .downloadTable {
+                    .downloadButton {
+                        display: none;
+                    }
+
+                    .downloadButtonIcon {
+                        display: block;
+                    }
                 }
+            }
 
-                .downloadTableIcon {
-                    font-size: 20px;
-                    color: $color-dark-primary;
-                    opacity: 0.9;
+            @media (max-width: 405px) {
+                .downloadContent .downloadTable {
+                    th:nth-child(2),
+                    td:nth-child(2) {
+                        display: none !important;
+                    }
+
+                    .downloadButton {
+                        display: block !important;
+                    }
+
+                    .downloadButtonIcon {
+                        display: none !important;
+                    }
                 }
-
-                .downloadTableDesc {
-                    font-size: 14px;
-                    color: $color-dark-on-surface-variant;
-                }
-
-                .downloadTableAction {
-                    display: flex;
-                    justify-content: flex-end;
-                }
-
-                .downloadTableActionLink {
-                    text-decoration: none;
-                }
-
             }
         }
 
@@ -341,18 +479,7 @@ $radius-pill: 9999px;
 }
 
 .menuCustomIcon {
-    display: inline-block;
-    width: 24px;
-    height: 24px;
-    background-color: $color-dark-on-surface-variant;
-    mask-image: var(--menu-custom-icon-url);
-    -webkit-mask-image: var(--menu-custom-icon-url);
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-    -webkit-mask-size: contain;
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-position: center;
+    @include masked-icon("--menu-custom-icon-url");
 }
 
 // Keyframes for animations

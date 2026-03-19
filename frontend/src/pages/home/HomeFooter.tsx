@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { MaterialIcon } from "@/utils/material";
-import { GitHubLink, GITHUB_WEB, GITHUB_APP, GITHUB_LICENSE } from "./homeLinks";
-import styles from "./home-footer.module.scss";
+import { GitHubLink, GITHUB_WEB, GITHUB_APP, GITHUB_LICENSE } from "@/pages/home/homeLinks";
+import styles from "@/pages/home/home-footer.module.scss";
 
 export function HomeFooter() {
     return (

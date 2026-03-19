@@ -2,8 +2,8 @@ import { useNavigate } from "react-router-dom";
 import { useUserStore } from "@/state/user";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
 import { MaterialButton, MaterialIconButton } from "@/utils/material";
-import { GitHubLink, SupportLink } from "./homeLinks";
-import styles from "./home-header.module.scss";
+import { GitHubLink, SupportLink } from "@/pages/home/homeLinks";
+import styles from "@/pages/home/home-header.module.scss";
 
 export function HomeHeader() {
     const navigate = useNavigate();
