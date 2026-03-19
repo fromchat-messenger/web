@@ -5,15 +5,23 @@ import { MaterialButton, MaterialIconButton } from "@/utils/material";
 import { GitHubLink, SupportLink } from "@/pages/home/homeLinks";
 import styles from "@/pages/home/home-header.module.scss";
 
-export function HomeHeader() {
+interface HomeHeaderProps {
+    onScrollToDownload?: () => void;
+}
+
+export function HomeHeader({ onScrollToDownload }: HomeHeaderProps) {
     const navigate = useNavigate();
     const { user } = useUserStore();
     const { isMobile } = useDownloadAppScreen();
     const isLoggedIn = user.authToken && user.currentUser;
 
+    const handleMobileDownload = () => {
+        onScrollToDownload?.();
+    };
+
     function handleGetStarted() {
         if (isMobile) {
-            navigate("/download-app");
+            handleMobileDownload();
         } else if (isLoggedIn) {
             navigate("/chat");
         } else {
@@ -35,7 +43,7 @@ export function HomeHeader() {
     );
 
     return (
-        <header className={styles.homepageHeader}>
+        <header className={styles.homepageHeader} data-home-header>
             <div className={styles.headerInner}>
                 <div className={styles.headerContent}>
                     <div className={styles.logo}>
@@ -55,7 +63,7 @@ export function HomeHeader() {
                         {isMobile ? (
                             <MaterialIconButton
                                 variant="filled"
-                                onClick={() => navigate("/download-app")}
+                                onClick={handleMobileDownload}
                                 icon="download"
                                 className={styles.headerSmallButton}
                             />

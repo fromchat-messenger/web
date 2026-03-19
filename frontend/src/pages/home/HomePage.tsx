@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import styles from "@/pages/home/home.module.scss";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
 import { MaterialButton, MaterialIcon, MaterialIconButton, MaterialList, MaterialListItem } from "@/utils/material";
@@ -55,6 +55,16 @@ export default function HomePage() {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [dialogOs, setDialogOs] = useState<DownloadOs>(() => detectOs());
     const [menuOpen, setMenuOpen] = useState(false);
+    const downloadSectionRef = useRef<HTMLElement>(null);
+
+    const scrollToDownload = () => {
+        const section = downloadSectionRef.current;
+        const header = document.querySelector<HTMLElement>("[data-home-header]");
+        if (!section) return;
+        const headerHeight = header?.getBoundingClientRect().height ?? 0;
+        const targetY = section.getBoundingClientRect().top + window.scrollY - headerHeight;
+        window.scrollTo({ top: targetY, behavior: "smooth" });
+    };
 
     const triggerDownload = (os: DownloadOs): boolean => {
         if (typeof document === "undefined") {
@@ -84,7 +94,7 @@ export default function HomePage() {
 
     return (
         <div className={styles.homepage}>
-            <HomeHeader />
+            <HomeHeader onScrollToDownload={scrollToDownload} />
 
             <main>
                 <section className={styles.title}>
@@ -156,7 +166,7 @@ export default function HomePage() {
                     </FeatureSection>
                 </section>
 
-                <section id="download" className={styles.download}>
+                <section ref={downloadSectionRef} className={styles.download}>
                     <div className={styles.container}>
                         <div className={styles.downloadContent}>
                             <h3>Скачайте приложение</h3>
@@ -259,7 +269,7 @@ export default function HomePage() {
             </main>
 
             <DownloadDialog open={dialogOpen} onOpenChange={setDialogOpen} os={dialogOs} />
-            <HomeFooter />
+            <HomeFooter onScrollToDownload={scrollToDownload} />
         </div>
     );
 }

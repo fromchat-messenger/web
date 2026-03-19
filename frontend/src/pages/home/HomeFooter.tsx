@@ -3,7 +3,11 @@ import { MaterialIcon } from "@/utils/material";
 import { GitHubLink, GITHUB_WEB, GITHUB_APP, GITHUB_LICENSE } from "@/pages/home/homeLinks";
 import styles from "@/pages/home/home-footer.module.scss";
 
-export function HomeFooter() {
+interface HomeFooterProps {
+    onScrollToDownload?: () => void;
+}
+
+export function HomeFooter({ onScrollToDownload }: HomeFooterProps) {
     return (
         <footer className={styles.homepageFooter}>
             <div className={styles.footerBrand}>
@@ -15,10 +19,14 @@ export function HomeFooter() {
             </div>
             <div className={styles.footerLinks}>
                 <div className={styles.footerSection}>
-                    <Link to="/#download" className={styles.footerLink}>
+                    <button
+                        type="button"
+                        onClick={onScrollToDownload}
+                        className={styles.footerLink}
+                    >
                         <MaterialIcon name="download" className={styles.footerLinkIcon} />
                         Скачать приложение
-                    </Link>
+                    </button>
                     <Link to="/login" className={styles.footerLink}>
                         <MaterialIcon name="language" className={styles.footerLinkIcon} />
                         Веб-версия

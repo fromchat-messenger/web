@@ -79,12 +79,48 @@
     color: $color-dark-on-surface-variant;
     text-decoration: none;
     font-size: 15px;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
     transition: color 0.2s ease, transform 0.15s ease;
     -webkit-user-drag: none;
     user-select: none;
 
     &:hover {
         color: $color-dark-on-surface;
+    }
+}
+
+button.footerLink {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+}
+
+button.footerLink {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+}
+
+button.footerLink {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+
+    &:is(button) {
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        font: inherit;
     }
 
     &:active {
