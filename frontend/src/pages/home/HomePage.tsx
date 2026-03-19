@@ -1,228 +1,236 @@
 import { useNavigate } from "react-router-dom";
-import { useUserStore } from "@/state/user";
-import styles from "./home.module.scss";
+import { useRef, useState, type ReactNode } from "react";
+import styles from "@/pages/home/home.module.scss";
 import useDownloadAppScreen from "@/core/hooks/useDownloadAppScreen";
-import { MaterialButton, MaterialIcon } from "@/utils/material";
+import { MaterialButton, MaterialIcon, MaterialIconButton, MaterialList, MaterialListItem } from "@/utils/material";
+import generalChatScreenshot from "@/images/screenshots/general-chat.png";
+import dmScreenshot from "@/images/screenshots/dm.png";
+import windowsIcon from "@/images/windows.svg";
+import linuxIcon from "@/images/linux.svg";
+import macIcon from "@/images/mac.svg";
+import { HomeHeader } from "@/pages/home/HomeHeader";
+import { HomeFooter } from "@/pages/home/HomeFooter";
+import { SplitButton } from "@/core/components/SplitButton";
+import { DownloadDialog } from "@/pages/home/DownloadDialog";
+import { OS_CONFIG, ALL_OS, detectOs, type DownloadOs } from "@/pages/home/os";
 
-function GitHubLink({ children }: { children: React.ReactNode }) {
-    return (
-        <a href="https://github.com/denis0001-dev/FromChat" target="_blank">{children}</a>
-    );
+interface FeatureSectionProps {
+    title: ReactNode;
+    children: ReactNode;
+    screenshot: string;
+    right?: boolean;
 }
 
-function SupportLink({ children }: { children: React.ReactNode }) {
-    return (
-        <a href="https://t.me/denis0001-dev" target="_blank">{children}</a>
+function FeatureSection({
+    title,
+    children,
+    screenshot,
+    right = false,
+}: FeatureSectionProps) {
+    const featureText = (
+        <div className={styles.featureText}>
+            <div className={styles.featureTitle}>{title}</div>
+            <div className={styles.featureDesc}>{children}</div>
+        </div>
     );
+
+    const featureScreenshot = (
+        <div className={styles.featureScreenshotOuter}>
+            <div className={styles.featureScreenshotGlow} />
+            <img src={screenshot} className={styles.featureScreenshot} draggable={false} />
+        </div>
+    )
+
+    return (
+        <div className={`${styles.featureContainer}`}>
+            {right ? <>{featureText}{featureScreenshot}</> : <>{featureScreenshot}{featureText}</>}
+        </div>
+    )
 }
 
 export default function HomePage() {
     const navigate = useNavigate();
-    const { user } = useUserStore();
     const { isMobile } = useDownloadAppScreen();
-    const isLoggedIn = user.authToken && user.currentUser;
 
-    function handleGetStarted() {
-        if (isMobile) {
-            navigate("/download-app");
-        } else if (isLoggedIn) {
-            navigate("/chat");
-        } else {
-            navigate("/login");
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogOs, setDialogOs] = useState<DownloadOs>(() => detectOs());
+    const [menuOpen, setMenuOpen] = useState(false);
+    const downloadSectionRef = useRef<HTMLElement>(null);
+
+    const scrollToDownload = () => {
+        const section = downloadSectionRef.current;
+        const header = document.querySelector<HTMLElement>("[data-home-header]");
+        if (!section) return;
+        const headerHeight = header?.getBoundingClientRect().height ?? 0;
+        const targetY = section.getBoundingClientRect().top + window.scrollY - headerHeight;
+        window.scrollTo({ top: targetY, behavior: "smooth" });
+    };
+
+    const triggerDownload = (os: DownloadOs): boolean => {
+        if (typeof document === "undefined") {
+            return false;
         }
-    }
 
-    const openBtn = (
-        <MaterialButton variant="filled" onClick={handleGetStarted}>
-            {isMobile ? "Скачать приложение" : isLoggedIn ? "Перейти в чат" : "Войти"}
-        </MaterialButton>
-    );
+        setDialogOs(os);
+        setDialogOpen(true);
+
+        const link = document.createElement("a");
+        link.href = `/api/download/${os}`;
+        link.download = "";
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return true;
+    };
+
+    const getButtonVariant = (os: DownloadOs): "filled" | "tonal" | "outlined" => {
+        const detectedOs = detectOs();
+        if (os === detectedOs) return "filled";
+        if (!isMobile && ["windows", "linux", "macos"].includes(os)) return "tonal";
+        if (isMobile && (os === "android" || os === "ios") && os !== detectedOs) return "tonal";
+        return "outlined";
+    };
 
     return (
         <div className={styles.homepage}>
-            <header className={styles.homepageHeader}>
-                <div className={styles.container}>
-                    <div className={styles.headerContent}>
-                        <div className={styles.logo}>
-                            <h1>FromChat</h1>
-                            <span className={styles.tagline}>100% открытый мессенджер</span>
-                        </div>
-                        <nav className={styles.headerNav}>
-                            <GitHubLink>
-                                <MaterialButton variant="text">GitHub</MaterialButton>
-                            </GitHubLink>
-                            <SupportLink>
-                                <MaterialButton variant="text">Поддержка</MaterialButton>
-                            </SupportLink>
-
-                            {openBtn}
-                        </nav>
-                    </div>
-                </div>
-            </header>
+            <HomeHeader onScrollToDownload={scrollToDownload} />
 
             <main>
-                <section className={styles.hero}>
-                    <div className={styles.container}>
-                        <div className={styles.heroContent}>
-                            <h2 className={styles.heroTitle}>
-                                Безопасный мессенджер с открытым исходным кодом
-                            </h2>
-                            <p className={styles.heroDescription}>
-                                FromChat — это полностью открытый мессенджер с end-to-end шифрованием,
-                                поддержкой файлов и уведомлений. Создан для тех, кто ценит приватность и свободу.
-                            </p>
-                            <div className={styles.heroActions}>
-                                {openBtn}
-                                {!isMobile && (
-                                    <MaterialButton
-                                        variant="outlined"
-                                        onClick={() => navigate("/register")}>
-                                        Зарегистрироваться
-                                    </MaterialButton>
-                                )}
-                            </div>
-                        </div>
-                        <div className={styles.heroVisual}>
-                            <div className={styles.chatPreview}>
-                                <div className={styles.chatWindow}>
-                                    <div className={styles.chatHeader}>
-                                        <div className={styles.chatTitle}>Общий чат</div>
-                                        <div className={styles.onlineIndicator}>●</div>
-                                    </div>
-                                    <div className={styles.chatMessages}>
-                                        <div className={`${styles.message} ${styles.received}`}>
-                                            <div className={styles.messageAvatar}>А</div>
-                                            <div className={styles.messageContent}>
-                                                <div className={styles.messageText}>Привет! Как дела?</div>
-                                                <div className={styles.messageTime}>14:30</div>
-                                            </div>
-                                        </div>
-                                        <div className={`${styles.message} ${styles.sent}`}>
-                                            <div className={styles.messageContent}>
-                                                <div className={styles.messageText}>Всё отлично! А у тебя как?</div>
-                                                <div className={styles.messageTime}>14:32</div>
-                                            </div>
-                                        </div>
-                                        <div className={`${styles.message} ${styles.received}`}>
-                                            <div className={styles.messageAvatar}>Б</div>
-                                            <div className={styles.messageContent}>
-                                                <div className={styles.messageText}>Отправляю файл 📎</div>
-                                                <div className={styles.messageTime}>14:35</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                <section className={styles.title}>
+                    <div className={styles.titleLogoWrapper}>
+                        <div className={styles.titleLogo} />
+                    </div>
+                    <div className={styles.titleContent}>FromChat</div>
+                    <div className={styles.titleDesc}>
+                        100% бесплатный и открытый мессенджер. Поддерживает self-hosted установку на своём сервере.
+                    </div>
+                    <div className={styles.titleButtons}>
+                        {isMobile ? null : (
+                            <MaterialButton
+                                variant="filled"
+                                onClick={() => navigate("/auth?mode=login")}
+                                icon="devices"
+                            >
+                                Открыть веб-версию
+                            </MaterialButton>
+                        )}
+                        <SplitButton
+                            variant={isMobile ? "filled" : "tonal"}
+                            text="Скачать приложение"
+                            icon="download"
+                            onPrimaryClick={() => triggerDownload(detectOs())}
+                            menuOpen={menuOpen}
+                            onMenuOpen={setMenuOpen}
+                            menu={(
+                                <MaterialList>
+                                    {ALL_OS.map((os) => (
+                                        <MaterialListItem
+                                            key={os}
+                                            icon={["windows", "linux", "macos"].includes(os) ? undefined : OS_CONFIG[os].icon}
+                                            headline={OS_CONFIG[os].label}
+                                            rounded
+                                            onClick={() => {
+                                                if (triggerDownload(os)) setMenuOpen(false);
+                                            }}
+                                        >
+                                            {["windows", "linux", "macos"].includes(os) && (
+                                                <span
+                                                    slot="icon"
+                                                    className={styles.menuCustomIcon}
+                                                    style={{
+                                                        "--menu-custom-icon-url": `url("${os === "windows" ? windowsIcon : os === "linux" ? linuxIcon : macIcon}")`,
+                                                    } as React.CSSProperties}
+                                                />
+                                            )}
+                                        </MaterialListItem>
+                                    ))}
+                                </MaterialList>
+                            )}
+                        />
                     </div>
                 </section>
 
                 <section className={styles.features}>
-                    <div className={styles.container}>
-                        <h3 className={styles.sectionTitle}>Возможности</h3>
-                        <div className={styles.featuresGrid}>
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="security" />
-                                </div>
-                                <h4>End-to-End Шифрование</h4>
-                                <p>
-                                    Ваши личные сообщения защищены современным шифрованием X25519 + AES-GCM.
-                                    Только вы и получатель можете прочитать сообщения.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="code" />
-                                </div>
-                                <h4>100% открытый код</h4>
-                                <p>
-                                    Весь исходный код доступен на <GitHubLink>GitHub</GitHubLink>. Вы можете проверить безопасность,
-                                    внести изменения или развернуть свой сервер.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="attach_file" />
-                                </div>
-                                <h4>Обмен Файлами</h4>
-                                <p>
-                                    Отправляйте файлы до 4 ГБ. Файлы в личных сообщениях шифруются.
-                                    В общем чате шифрования нет, так как ваши сообщения могут читать все пользователи FromChat.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="notifications" />
-                                </div>
-                                <h4>Уведомления</h4>
-                                <p>
-                                    Получайте push-уведомления в браузере и настольном приложении.
-                                    Никогда не пропустите важное сообщение.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="edit" />
-                                </div>
-                                <h4>Редактирование</h4>
-                                <p>
-                                    Редактируйте и удаляйте свои сообщения. Отвечайте на сообщения
-                                    для лучшего контекста общения.
-                                </p>
-                            </div>
-
-                            <div className={styles.featureCard}>
-                                <div className={styles.featureIcon}>
-                                    <MaterialIcon name="computer" />
-                                </div>
-                                <h4>Кроссплатформенность</h4>
-                                <p>
-                                    Работает в браузере и как настольное приложение для Windows,
-                                    macOS и Linux. Единый интерфейс везде.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+                    <FeatureSection
+                        title={<>Общий чат</>}
+                        screenshot={generalChatScreenshot}
+                        right
+                    >
+                        Открытый форум для всех пользователей сервера. Пишите сообщения, делитесь файлами и общайтесь в реальном времени.
+                    </FeatureSection>
+                    <FeatureSection
+                        title={<>Личные сообщения</>}
+                        screenshot={dmScreenshot}>
+                        Общайтесь с одним человеком в личной переписке.
+                    </FeatureSection>
                 </section>
 
-                <section className={styles.download}>
+                <section ref={downloadSectionRef} className={styles.download}>
                     <div className={styles.container}>
                         <div className={styles.downloadContent}>
                             <h3>Скачайте приложение</h3>
                             <p>
-                                Для лучшего опыта используйте настольное приложение с поддержкой
-                                уведомлений и автономной работы.
+                                Настольное приложение с уведомлениями и автономной работой
+                                или мобильное приложение для Android и iOS.
                             </p>
-                            <div className={styles.downloadButtons}>
-                                {!isMobile ? (
-                                    <>
-                                        <a
-                                            href="https://github.com/Toolbox-io/FromChat/actions/workflows/build.yml"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            <MaterialButton variant="filled">
-                                                <MaterialIcon name="download" slot="icon" />
-                                                Скачать для ПК
-                                            </MaterialButton>
-                                        </a>
-                                        <MaterialButton variant="outlined" onClick={() => navigate("/login")}>
-                                            <MaterialIcon name="language" slot="icon" />
-                                            Веб-версия
-                                        </MaterialButton>
-                                    </>
-                                ) : (
-                                    <MaterialButton variant="filled" onClick={() => navigate("/download-app")}>
-                                        Скачать приложение
-                                    </MaterialButton>
-                                )}
-                            </div>
+                            <table className={styles.downloadTable}>
+                                <thead>
+                                    <tr>
+                                        <th>Платформа</th>
+                                        <th>Описание</th>
+                                        <th />
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {ALL_OS.map((os) => (
+                                        <tr key={os}>
+                                            <td className={styles.downloadTableOs}>
+                                                <span className={styles.downloadTableOsContent}>
+                                                    {["windows", "linux", "macos"].includes(os) ? (
+                                                        <span
+                                                            className={styles.tableOsIcon}
+                                                            style={{
+                                                                "--table-os-icon-url": `url("${os === "windows" ? windowsIcon : os === "linux" ? linuxIcon : macIcon}")`,
+                                                            } as React.CSSProperties}
+                                                        />
+                                                    ) : (
+                                                        <MaterialIcon
+                                                            name={OS_CONFIG[os].icon}
+                                                            className={styles.downloadTableIcon}
+                                                        />
+                                                    )}
+                                                    <span>{OS_CONFIG[os].label}</span>
+                                                </span>
+                                            </td>
+                                            <td className={styles.downloadTableDesc}>
+                                                <span className={styles.downloadTableDescInner}>
+                                                    {OS_CONFIG[os].description}
+                                                </span>
+                                            </td>
+                                            <td className={styles.downloadTableAction}>
+                                                <span className={styles.downloadTableActionInner}>
+                                                    <MaterialButton
+                                                        variant={getButtonVariant(os)}
+                                                        icon="download"
+                                                        className={styles.downloadButton}
+                                                        onClick={() => triggerDownload(os)}
+                                                    >
+                                                        Скачать
+                                                    </MaterialButton>
+                                                    <MaterialIconButton
+                                                        variant={getButtonVariant(os)}
+                                                        icon="download"
+                                                        className={styles.downloadButtonIcon}
+                                                        onClick={() => triggerDownload(os)}
+                                                        title={`Скачать ${OS_CONFIG[os].label}`}
+                                                    />
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </section>
@@ -232,7 +240,8 @@ export default function HomePage() {
                         <div className={styles.ctaContent}>
                             <h3>Готовы начать общение?</h3>
                             <p>
-                                Присоединяйтесь к FromChat и общайтесь безопасно с друзьями и коллегами.
+                                Создайте аккаунт за минуту. Общайтесь в общем чате, ведите личную переписку
+                                или звоните — всё бесплатно и с открытым кодом.
                             </p>
                             <div className={styles.ctaActions}>
                                 {isMobile ? (
@@ -259,24 +268,8 @@ export default function HomePage() {
                 </section>
             </main>
 
-            <footer className={styles.homepageFooter}>
-                <div className={styles.container}>
-                    <div className={styles.footerContent}>
-                        <div className={styles.footerSection}>
-                            <h4>Ссылки</h4>
-                            <GitHubLink>GitHub</GitHubLink>
-                            <SupportLink>Поддержка</SupportLink>
-                        </div>
-                        <div className={styles.footerSection}>
-                            <h4>Лицензия</h4>
-                            <p>GPL-3.0</p>
-                        </div>
-                    </div>
-                    <div className={styles.footerBottom}>
-                        <p>&copy; 2025 FromChat. Сделано программистом denis0001-dev с ❤️ для свободы общения.</p>
-                    </div>
-                </div>
-            </footer>
+            <DownloadDialog open={dialogOpen} onOpenChange={setDialogOpen} os={dialogOs} />
+            <HomeFooter onScrollToDownload={scrollToDownload} />
         </div>
     );
 }

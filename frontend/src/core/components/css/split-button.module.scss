@@ -1,0 +1,231 @@
+@use "../../../css/material" as *;
+
+$height: 40px;
+$trailing-width: 48px; // 12 + 22 + 14 per spec
+$between-space: 2px;
+$outer-radius: calc(#{$height} / 2); // 20px
+$inner-radius: 4px;
+$inner-radius-hovered: 12px;
+
+.splitButton {
+    display: inline-flex;
+    align-items: stretch;
+    position: relative;
+    border-radius: $outer-radius;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.1px;
+    background-color: transparent;
+    color: $color-dark-on-primary;
+    isolation: isolate;
+
+    &.disabled {
+        opacity: 0.38;
+        pointer-events: none;
+    }
+
+    .primarySegment,
+    .menuSegment {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        outline: none;
+        background-color: transparent;
+        color: inherit;
+        padding: 0;
+        min-height: $height;
+        cursor: pointer;
+        font: inherit;
+        box-sizing: border-box;
+        overflow: hidden;
+
+        &:focus-visible {
+            outline: 2px solid $color-dark-primary;
+            outline-offset: 2px;
+        }
+
+        mdui-ripple {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+    }
+
+    .primarySegment {
+        border-top-left-radius: $outer-radius;
+        border-bottom-left-radius: $outer-radius;
+        border-top-right-radius: $inner-radius;
+        border-bottom-right-radius: $inner-radius;
+        padding-inline: 16px 12px;
+        transition: border-top-right-radius 0.18s ease-out, border-bottom-right-radius 0.18s ease-out;
+
+        @media (hover: hover) {
+            &:hover {
+                border-top-right-radius: $inner-radius-hovered;
+                border-bottom-right-radius: $inner-radius-hovered;
+            }
+        }
+
+        &:active {
+            border-top-right-radius: $inner-radius-hovered;
+            border-bottom-right-radius: $inner-radius-hovered;
+        }
+
+        .primaryContent {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+            user-select: none;
+
+            .leadingIcon {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+
+                .leadingIconIcon {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 20px;
+                    width: 20px;
+                    height: 20px;
+                }
+            }
+
+            .label {
+                white-space: nowrap;
+            }
+        }
+    }
+
+    .menuSegment {
+        width: $trailing-width;
+        border-top-right-radius: $outer-radius;
+        border-bottom-right-radius: $outer-radius;
+        border-top-left-radius: $inner-radius;
+        border-bottom-left-radius: $inner-radius;
+        margin-left: $between-space;
+        padding-inline: 12px 14px;
+        transition:
+            border-top-left-radius 0.18s ease-out,
+            border-bottom-left-radius 0.18s ease-out,
+            padding-inline 0.18s ease-out;
+
+        @media (hover: hover) {
+            &:hover {
+                border-top-left-radius: $inner-radius-hovered;
+                border-bottom-left-radius: $inner-radius-hovered;
+            }
+        }
+
+        &:active {
+            border-top-left-radius: $inner-radius-hovered;
+            border-bottom-left-radius: $inner-radius-hovered;
+        }
+
+        .menuIcon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            font-size: 22px;
+            transition: transform 0.18s ease-out;
+            pointer-events: none;
+            user-select: none;
+
+            mdui-icon {
+                width: inherit;
+                height: inherit;
+                font-size: inherit;
+            }
+        }
+    }
+
+    &[data-open="true"] .menuSegment {
+        $size: calc($trailing-width / 2);
+        border-radius: $size;
+        padding-inline: 13px 13px;
+
+        .menuIcon {
+            transform: rotate(-180deg);
+        }
+    }
+
+    &.variantFilled {
+        .primarySegment, .menuSegment {
+            background-color: $color-dark-primary;
+            color: $color-dark-on-primary;
+            border: none;
+        }
+    }
+
+    &.variantTonal {
+        .primarySegment, .menuSegment {
+            background-color: $color-dark-primary-container;
+            color: $color-dark-on-primary-container;
+            border: none;
+        }
+    }
+
+    &.variantOutlined {
+        .primarySegment, .menuSegment {
+            border: 1px solid rgba($color-dark-outline, 0.8);
+            border: none;
+            background-color: transparent;
+            color: $color-dark-on-surface;
+        }
+    }
+
+    &.variantElevated {
+        .primarySegment, .menuSegment {
+            box-shadow:
+                0 1px 3px rgba(0, 0, 0, 0.3),
+                0 1px 2px rgba(0, 0, 0, 0.15);
+            background-color: $color-dark-surface-container-low;
+            color: $color-dark-on-surface;
+        }
+    }
+
+}
+
+$menu-padding: 8px;
+
+.menu {
+    padding: $menu-padding;
+    min-width: 220px;
+    border-radius: 16px;
+    background-color: rgba($color-dark-surface-container-high, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 100000000;
+
+    // Custom slim semi-transparent scrollbar
+    &::-webkit-scrollbar {
+        width: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: rgba($color-dark-on-surface, 0.25);
+        border-radius: 2px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: rgba($color-dark-on-surface, 0.4);
+    }
+
+    scrollbar-width: thin;
+    scrollbar-color: rgba($color-dark-on-surface, 0.25) transparent;
+
+    mdui-list {
+        padding: 0;
+    }
+}

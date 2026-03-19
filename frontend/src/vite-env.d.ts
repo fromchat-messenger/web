@@ -8,6 +8,12 @@ declare global {
         interface SyntheticEvent<T = Element, E = Event> {
             target: EventTarget & T;
         }
+
+        namespace JSX {
+            interface IntrinsicElements {
+                "mdui-ripple": DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>;
+            }
+        }
     }
 
     // Augment DOM event listeners to provide typed target for ALL elements
