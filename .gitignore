@@ -580,3 +580,4 @@ backend/alembic/**
 .cursor/plans
 tmp
 compliance_keypair.txt
+backend/files
