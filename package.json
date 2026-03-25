@@ -61,7 +61,7 @@
         "sass-embedded": "^1.93.0",
         "svgo": "^4.0.0",
         "terser": "^5.44.0",
-        "typescript": "~5.9.2",
+        "typescript": "~6.0.2",
         "vite": "^7.1.6",
         "vite-plugin-electron": "^0.29.0",
         "vite-plugin-electron-renderer": "^0.14.6",
