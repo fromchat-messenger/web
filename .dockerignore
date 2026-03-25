@@ -1,12 +1,2 @@
-# Exclude data directory to prevent local database from being copied into production images
-backend/data/
-
-# Exclude logs
-backend/logs/
-
-# Exclude development files
-node_modules/
-.git/
-.gitignore
-README.md
-*.log
+# Firebase cert: bind-mounted at runtime; do not send to docker build context
+firebase-cert.json

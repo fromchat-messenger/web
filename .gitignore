@@ -118,6 +118,12 @@ web_modules/
 .env.production.local
 .env.local
 
+# Firebase service account JSON (backend/firebase-cert.json; bind-mounted in docker-compose)
+firebase-cert.json
+**/firebase-cert.json
+firebase-adminsdk.json
+**/firebase-adminsdk.json
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

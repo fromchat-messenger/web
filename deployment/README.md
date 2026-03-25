@@ -56,11 +56,12 @@ FILE_STORAGE_DB_PASSWORD=separate_password_for_file_storage
 JWT_SECRET=your_jwt_secret_key
 VAPID_PUBLIC_KEY=generated_vapid_public_key
 VAPID_PRIVATE_KEY=generated_vapid_private_key
-FIREBASE_CERT='{"type":"service_account",...}'
 
 # Compliance (public key only - private key stays offline)
 COMPLIANCE_PUBLIC_KEY=base64_encoded_public_key
 ```
+
+The main backend **requires** Firebase for Android push (FCM). It is not generated into `.env`: `docker-compose.yml` sets `FIREBASE_CERT` and read-only-mounts `backend/firebase-cert.json` from the repo. Place your Firebase service account JSON at `backend/firebase-cert.json` before `docker compose up` (gitignored; excluded from the image build via the repo-root `.dockerignore`).
 
 ## Deployment Commands
 

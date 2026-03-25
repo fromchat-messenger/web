@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from pywebpush import webpush, WebPushException
@@ -8,24 +9,45 @@ from .models import PushSubscription, User, Message, DMEnvelope, FcmToken
 import firebase_admin
 from firebase_admin import credentials as firebase_credentials
 from firebase_admin import messaging as firebase_messaging
-import base64
 
 logger = logging.getLogger("uvicorn.error")
+
+
+def _load_firebase_service_account_dict(firebase_cert: str) -> dict:
+    """Load Firebase service account JSON from FIREBASE_CERT path (relative to process cwd, e.g. backend/)."""
+    s = (firebase_cert or "").strip()
+    if not s:
+        raise RuntimeError("FIREBASE_CERT env variable is required (path to service account JSON file)")
+
+    p = Path(s).expanduser()
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    if not p.is_file():
+        raise FileNotFoundError(
+            f"FIREBASE_CERT is not a readable file: {p} (set FIREBASE_CERT to the JSON key path)"
+        )
+
+    with p.open(encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or data.get("type") != "service_account":
+        raise ValueError("Firebase credentials file must be a service account JSON object")
+    return data
+
 
 class PushNotificationService:
     def __init__(self):
         self.vapid_private_key = os.getenv("VAPID_PRIVATE_KEY")
         self.vapid_public_key = os.getenv("VAPID_PUBLIC_KEY")
-        # Firebase Admin initialization (modern API). Only FIREBASE_CERT env is supported.
+        # Firebase Admin is required for main (FCM). FIREBASE_CERT = path to service account JSON.
         self.firebase_initialized = False
+        firebase_cert = os.getenv("FIREBASE_CERT")
+        if not (firebase_cert or "").strip():
+            raise RuntimeError(
+                "FIREBASE_CERT is required (path to Firebase service account JSON); "
+                "docker-compose sets this and bind-mounts backend/firebase-cert.json"
+            )
         try:
-            firebase_cert = os.getenv("FIREBASE_CERT")
-            if not firebase_cert:
-                raise RuntimeError("FIREBASE_CERT env variable is required for Firebase Admin SDK initialization")
-
-            # Support raw JSON or base64-encoded JSON in FIREBASE_CERT
-            decoded = base64.b64decode(firebase_cert).decode("utf-8")
-            sa_dict = json.loads(decoded)
+            sa_dict = _load_firebase_service_account_dict(firebase_cert)
 
             cred = firebase_credentials.Certificate(sa_dict)
             firebase_admin.initialize_app(cred)
