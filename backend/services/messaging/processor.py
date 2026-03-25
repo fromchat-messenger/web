@@ -30,6 +30,14 @@ from .encryption import (
 logger = logging.getLogger("uvicorn.error")
 
 
+def _store_compliance_wrapped_mek() -> bool:
+    try:
+        from services.shared.message_retention import get_message_retention
+    except ImportError:
+        from backend.services.shared.message_retention import get_message_retention  # type: ignore
+    return not get_message_retention().never_store_compliance_mek()
+
+
 def process_encrypted_message(
     client_public_key_b64: str,
     transport_nonce_b64: str,
@@ -101,32 +109,50 @@ def process_encrypted_message(
         # Use HKDF with recipient public key bytes as input to derive wrap keys
         # This is deterministic and doesn't require storing ephemeral keys
         import base64
-        compliance_key_bytes = base64.b64decode(compliance_public_key_b64)
         sender_key_bytes = base64.b64decode(sender_public_key_b64)
         recipient_key_bytes = base64.b64decode(recipient_public_key_b64)
 
-        logger.info(f"🔑 Deriving wrap keys for sender={sender_public_key_b64[:20]}... recipient={recipient_public_key_b64[:20]}...")
+        logger.info(
+            "🔑 Deriving wrap keys for sender=%s... recipient=%s...",
+            sender_public_key_b64[:20],
+            recipient_public_key_b64[:20],
+        )
 
-        compliance_wrap_key = derive_key_from_shared_secret(compliance_key_bytes, "compliance_wrap_key")
         sender_wrap_key = derive_key_from_shared_secret(sender_key_bytes, "sender_wrap_key")
         recipient_wrap_key = derive_key_from_shared_secret(recipient_key_bytes, "recipient_wrap_key")
 
-        logger.info("✅ Wrap keys derived successfully")
+        logger.info("✅ Sender/recipient wrap keys derived successfully")
 
-        # Step 4b: Wrap MEK for each recipient
-        compliance_wrapped_mek = wrap_mek(mek, compliance_wrap_key)
+        if _store_compliance_wrapped_mek():
+            if not (compliance_public_key_b64 or "").strip():
+                raise ValueError(
+                    "compliance public key required when MESSAGE_RETENTION_DAYS is not -1"
+                )
+            compliance_key_bytes = base64.b64decode(compliance_public_key_b64)
+            compliance_wrap_key = derive_key_from_shared_secret(
+                compliance_key_bytes, "compliance_wrap_key"
+            )
+            compliance_wrapped_mek = wrap_mek(mek, compliance_wrap_key)
+            logger.info(
+                "🔐 Compliance MEK: %s... (%s chars)",
+                compliance_wrapped_mek[:30],
+                len(compliance_wrapped_mek),
+            )
+        else:
+            compliance_wrapped_mek = None
+            logger.info("CRYPTO: Compliance MEK not stored (MESSAGE_RETENTION_DAYS=-1)")
+
         sender_wrapped_mek = wrap_mek(mek, sender_wrap_key)
         recipient_wrapped_mek = wrap_mek(mek, recipient_wrap_key)
 
         logger.info(f"🔐 MEK wrapping complete:")
-        logger.info(f"   Compliance MEK: {compliance_wrapped_mek[:30]}... ({len(compliance_wrapped_mek)} chars)")
         logger.info(f"   Sender MEK: {sender_wrapped_mek[:30]}... ({len(sender_wrapped_mek)} chars)")
         logger.info(f"   Recipient MEK: {recipient_wrapped_mek[:30]}... ({len(recipient_wrapped_mek)} chars)")
 
         duration = time.time() - start_time
         logger.info(
-            "CRYPTO: Successfully processed message with 3 MEK wraps (compliance/sender/recipient) in %.2fms",
-            duration * 1000
+            "CRYPTO: Successfully processed message with MEK wraps in %.2fms",
+            duration * 1000,
         )
 
         # Get the transport public key for storage with the message
@@ -251,15 +277,25 @@ def process_encrypted_message_and_files(
         files_out.append(entry)
 
     # Derive wrap keys deterministically (same as existing flow)
-    compliance_key_bytes = base64.b64decode(compliance_public_key_b64)
     sender_key_bytes = base64.b64decode(sender_public_key_b64)
     recipient_key_bytes = base64.b64decode(recipient_public_key_b64)
 
-    compliance_wrap_key = derive_key_from_shared_secret(compliance_key_bytes, "compliance_wrap_key")
     sender_wrap_key = derive_key_from_shared_secret(sender_key_bytes, "sender_wrap_key")
     recipient_wrap_key = derive_key_from_shared_secret(recipient_key_bytes, "recipient_wrap_key")
 
-    compliance_wrapped_mek = wrap_mek(mek, compliance_wrap_key)
+    if _store_compliance_wrapped_mek():
+        if not (compliance_public_key_b64 or "").strip():
+            raise ValueError(
+                "compliance public key required when MESSAGE_RETENTION_DAYS is not -1"
+            )
+        compliance_key_bytes = base64.b64decode(compliance_public_key_b64)
+        compliance_wrap_key = derive_key_from_shared_secret(
+            compliance_key_bytes, "compliance_wrap_key"
+        )
+        compliance_wrapped_mek = wrap_mek(mek, compliance_wrap_key)
+    else:
+        compliance_wrapped_mek = None
+
     sender_wrapped_mek = wrap_mek(mek, sender_wrap_key)
     recipient_wrapped_mek = wrap_mek(mek, recipient_wrap_key)
 

@@ -50,7 +50,19 @@ def _initialize_compliance_key():
     The private key never exists on the server - all decryption is done offline.
     """
     global _COMPLIANCE_PUBLIC_KEY_B64
-    
+
+    try:
+        from services.shared.message_retention import get_message_retention
+    except ImportError:
+        from backend.services.shared.message_retention import get_message_retention  # type: ignore
+
+    if get_message_retention().never_store_compliance_mek():
+        _COMPLIANCE_PUBLIC_KEY_B64 = ""
+        logger.info(
+            "Compliance MEK not stored (MESSAGE_RETENTION_DAYS=-1); COMPLIANCE_PUBLIC_KEY optional"
+        )
+        return
+
     env_key = os.getenv("COMPLIANCE_PUBLIC_KEY", "").strip()
     if not env_key:
         raise RuntimeError(
@@ -58,7 +70,7 @@ def _initialize_compliance_key():
             "Generate offline on an air-gapped machine: "
             "X25519 private key → export public key (base64) → set as env var"
         )
-    
+
     _COMPLIANCE_PUBLIC_KEY_B64 = env_key
     logger.info("Loaded compliance public key from COMPLIANCE_PUBLIC_KEY environment variable")
 
@@ -151,6 +163,13 @@ except ImportError:
 if add_security_middleware:
     add_security_middleware(app)
 
+try:
+    from services.shared.inter_service_rate_limit import attach_internal_service_rate_limit
+except ImportError:
+    from backend.services.shared.inter_service_rate_limit import attach_internal_service_rate_limit  # type: ignore
+
+_internal_limiter = attach_internal_service_rate_limit(app, default_limit="5000/minute")
+
 # CORS configuration for inter-service communication
 app.add_middleware(
     CORSMiddleware,
@@ -202,6 +221,7 @@ class ProcessMessageWithFilesRequest(ProcessMessageRequest):
 # ============================================================================
 
 @app.get("/health", response_model=None)
+@_internal_limiter.exempt
 async def health_check():
     """Health check endpoint for messaging service."""
     return {"status": "healthy", "service": "messaging"}

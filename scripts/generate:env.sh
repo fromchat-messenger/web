@@ -2,15 +2,14 @@
 # =============================================================================
 # _ENV_TEMPLATE: one KEY=value per line. Use <set> for stdin prompts. Use
 # <gen:…> only where a dedicated step is needed. Any $(command) here runs when
-# this script executes (after cd "$ROOT"). Piped stdin order: five <set> lines
-# (TURN_USERNAME, TURN_SECRET, DEPLOYMENT_SERVER, FIREBASE_CERT, RELEASES_TOKEN),
+# this script executes (after cd "$ROOT"). Piped stdin order: four <set> lines
+# (TURN_USERNAME, TURN_SECRET, DEPLOYMENT_SERVER, RELEASES_TOKEN),
 # then commit (y/n), then deployment output directory (blank = deployment), then
 # writes <dir>/.env and <dir>/compliance_keypair.txt (default dir: deployment); then
 # if each target exists, backup prompt [Y/n] (Enter = yes; only n/no skips).
 # Nothing is written until commit=y (including compliance_keypair.txt). Backups after commit=y, default yes.
-# Backups use deployment/.env.backup.<6-char sha256 prefix>.bak (git-style); same
-# contents reuse one file. If that name exists with different content, full hash is used.
-# Each written file uses <path>.backup.<short>.bak beside the target (same hash rules).
+# Backups use <original-path>.<6-char sha256>.bak (same contents reuse one file). If that
+# name exists with different content, full 64-char hash is used before .bak.
 # Template is read from fd 3 so stdin stays free.
 # =============================================================================
 set -euo pipefail
@@ -32,7 +31,6 @@ COMPLIANCE_PUBLIC_KEY=<gen:compliance>
 TURN_USERNAME=<set>
 TURN_SECRET=<set>
 DEPLOYMENT_SERVER=<set>
-FIREBASE_CERT=<set>
 POSTGRES_PASSWORD=$(openssl rand -hex 8 </dev/null)
 MAIN_DB_PASSWORD=$(openssl rand -hex 8 </dev/null)
 MESSAGING_DB_PASSWORD=$(openssl rand -hex 8 </dev/null)
@@ -147,20 +145,19 @@ prompt_set() {
   done
 }
 
-# $2 = backup path prefix without .<hash>.bak (use "${src}.backup")
+# Backup path: {src}.{short-hash}.bak, or {src}.{full-hash}.bak on short-hash collision
 _do_backup_copy() {
   local src="$1"
-  local dest_prefix="$2"
   local full short dest
   full="$(openssl dgst -sha256 -r <"$src" | awk '{print $1}')"
   short="${full:0:6}"
-  dest="${dest_prefix}.${short}.bak"
+  dest="${src}.${short}.bak"
   if [[ -f "$dest" ]]; then
     if cmp -s "$src" "$dest"; then
       print_kv_row "backup" "$GRAY" "backup_unchanged" "$dest"
       return 0
     fi
-    dest="${dest_prefix}.${full}.bak"
+    dest="${src}.${full}.bak"
     if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
       print_kv_row "backup" "$GRAY" "backup_unchanged" "$dest"
       return 0
@@ -295,11 +292,11 @@ ENV_PATH="${DEPLOY_OUTPUT_DIR}/.env"
 COMPLIANCE_TXT="${DEPLOY_OUTPUT_DIR}/compliance_keypair.txt"
 
 if [[ -f "$ENV_PATH" ]] && read_yes_default_yes "File exists: ${ENV_PATH}. Create backup before overwrite? [Y/n]: "; then
-  _do_backup_copy "$ENV_PATH" "${ENV_PATH}.backup"
+  _do_backup_copy "$ENV_PATH"
 fi
 
 if [[ -f "$COMPLIANCE_TXT" ]] && read_yes_default_yes "File exists: ${COMPLIANCE_TXT}. Create backup before overwrite? [Y/n]: "; then
-  _do_backup_copy "$COMPLIANCE_TXT" "${COMPLIANCE_TXT}.backup"
+  _do_backup_copy "$COMPLIANCE_TXT"
 fi
 
 mkdir -p "$(dirname "$ENV_PATH")"

@@ -44,6 +44,9 @@ def _running_in_docker() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    cleanup_task = None
+    key_lifecycle_task = None
+
     # Startup - run migration in subprocess to avoid logging interference
     try:
         logger.info("Starting database migration check...")
@@ -122,6 +125,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to start rate limit cleanup task: {e}")
         cleanup_task = None
 
+    try:
+        from .key_lifecycle_task import key_lifecycle_poll_seconds, start_key_lifecycle_cleanup_task
+        _poll = key_lifecycle_poll_seconds()
+        if _poll is not None:
+            key_lifecycle_task = asyncio.create_task(start_key_lifecycle_cleanup_task(_poll))
+            logger.info("Key lifecycle cleanup task started (interval=%ss)", _poll)
+        else:
+            key_lifecycle_task = None
+            logger.info("Key lifecycle cleanup disabled (MESSAGE_RETENTION_DAYS is 0 or -1)")
+    except Exception as e:
+        logger.error("Failed to start key lifecycle cleanup task: %s", e)
+        key_lifecycle_task = None
+
     yield
 
     # Shutdown - cancel cleanup task if it exists
@@ -129,6 +145,13 @@ async def lifespan(app: FastAPI):
         cleanup_task.cancel()
         try:
             await cleanup_task
+        except asyncio.CancelledError:
+            pass
+
+    if key_lifecycle_task:
+        key_lifecycle_task.cancel()
+        try:
+            await key_lifecycle_task
         except asyncio.CancelledError:
             pass
 

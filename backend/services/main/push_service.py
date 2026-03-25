@@ -12,22 +12,19 @@ from firebase_admin import messaging as firebase_messaging
 
 logger = logging.getLogger("uvicorn.error")
 
+# backend/firebase-cert.json — fixed path; Docker bind-mounts this file to /app/firebase-cert.json
+_FIREBASE_CERT_PATH = Path(__file__).resolve().parents[2] / "firebase-cert.json"
 
-def _load_firebase_service_account_dict(firebase_cert: str) -> dict:
-    """Load Firebase service account JSON from FIREBASE_CERT path (relative to process cwd, e.g. backend/)."""
-    s = (firebase_cert or "").strip()
-    if not s:
-        raise RuntimeError("FIREBASE_CERT env variable is required (path to service account JSON file)")
 
-    p = Path(s).expanduser()
-    if not p.is_absolute():
-        p = Path.cwd() / p
-    if not p.is_file():
+def _load_firebase_service_account_dict(cert_path: Path) -> dict:
+    """Load Firebase service account JSON from ``cert_path`` (must exist)."""
+    cert_path = cert_path.resolve()
+    if not cert_path.is_file():
         raise FileNotFoundError(
-            f"FIREBASE_CERT is not a readable file: {p} (set FIREBASE_CERT to the JSON key path)"
+            f"Firebase credentials file missing or not a file: {cert_path} (expected backend/firebase-cert.json)"
         )
 
-    with p.open(encoding="utf-8") as f:
+    with cert_path.open(encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict) or data.get("type") != "service_account":
         raise ValueError("Firebase credentials file must be a service account JSON object")
@@ -38,23 +35,17 @@ class PushNotificationService:
     def __init__(self):
         self.vapid_private_key = os.getenv("VAPID_PRIVATE_KEY")
         self.vapid_public_key = os.getenv("VAPID_PUBLIC_KEY")
-        # Firebase Admin is required for main (FCM). FIREBASE_CERT = path to service account JSON.
+        # Firebase Admin is required for main (FCM); cert path is backend/firebase-cert.json.
         self.firebase_initialized = False
-        firebase_cert = os.getenv("FIREBASE_CERT")
-        if not (firebase_cert or "").strip():
-            raise RuntimeError(
-                "FIREBASE_CERT is required (path to Firebase service account JSON); "
-                "docker-compose sets this and bind-mounts backend/firebase-cert.json"
-            )
         try:
-            sa_dict = _load_firebase_service_account_dict(firebase_cert)
+            sa_dict = _load_firebase_service_account_dict(_FIREBASE_CERT_PATH)
 
             cred = firebase_credentials.Certificate(sa_dict)
             firebase_admin.initialize_app(cred)
             self.firebase_initialized = True
-            logger.info("Firebase Admin SDK initialized for push sending (FIREBASE_CERT)")
+            logger.info("Firebase Admin SDK initialized (%s)", _FIREBASE_CERT_PATH)
         except Exception as e:
-            logger.error(f"Failed to initialize Firebase Admin SDK from FIREBASE_CERT: {e}")
+            logger.error("Failed to initialize Firebase Admin SDK from %s: %s", _FIREBASE_CERT_PATH, e)
             raise
 
         if (not self.vapid_public_key) or (not self.vapid_private_key):
@@ -203,7 +194,7 @@ class PushNotificationService:
         """Send an FCM data-only push to a single device token using Firebase Admin SDK.
         Notification display is handled by the app, not FCM."""
         if not self.firebase_initialized:
-            raise RuntimeError("Firebase Admin SDK not initialized (FIREBASE_CERT required)")
+            raise RuntimeError("Firebase Admin SDK not initialized")
 
         try:
             # Send only data payload - let the app handle notification display

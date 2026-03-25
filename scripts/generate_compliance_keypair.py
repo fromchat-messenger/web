@@ -73,10 +73,20 @@ def main():
         action="store_true",
         help="Output only the public key (for scripts)"
     )
-    
+    parser.add_argument(
+        "--emit-key-lines",
+        action="store_true",
+        help="Print private key line then public key line to stdout only (no file; for generate:env.sh)",
+    )
+
     args = parser.parse_args()
-    
+
     private_b64, public_b64 = generate_compliance_keypair()
+
+    if args.emit_key_lines:
+        print(private_b64)
+        print(public_b64)
+        return
 
     if args.public_only:
         # Output only public key for script integration

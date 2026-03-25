@@ -74,6 +74,13 @@ async def get_compliance_public_key(timeout: float = 5.0) -> Dict[str, Any]:
     """
     Return compliance system public key (for MEK wrapping).
     """
+    try:
+        from services.shared.message_retention import get_message_retention
+    except ImportError:
+        from backend.services.shared.message_retention import get_message_retention  # type: ignore
+    if get_message_retention().never_store_compliance_mek():
+        return {"public_key_b64": ""}
+
     mod = _get_messaging_module()
     if mod:
         # in-process async call

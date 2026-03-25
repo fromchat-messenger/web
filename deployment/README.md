@@ -36,9 +36,11 @@ This directory contains the Docker configuration for the 3-service compliance ar
 
 ## Security Features
 
-- **Network Isolation**: Messaging and file storage services have NO external network access
+- **Network Isolation**: Messaging and file storage services attach only to the internal `services` network (`internal: true`) — no path to the public internet. PostgreSQL is on `services` only (not on `public`), so other `public`-only containers cannot reach the DB over Docker DNS; the host still uses the published `127.0.0.1:5432` port map.
+- **Inter-service rate limits**: The messaging and file_storage apps use SlowAPI with a high per-IP default (`5000/minute`) plus an exempt `/health` route; traffic is mostly from the main service. The main API keeps finer per-route limits.
+- **Firewall note**: Isolation is enforced with Docker networks (not iptables inside containers). Optional **gVisor / runsc** remains a manual host-level step (see plan); it is not automated here.
 - **Database Separation**: Each service has its own schema with minimal required permissions
-- **Secure File Storage**: File storage uses restricted permissions and user isolation
+- **Secure File Storage**: File storage uses restricted permissions and user isolation (stored files `chmod 600`, dirs `700`)
 - **Ephemeral Keys**: Messaging service generates temporary keys (never persisted)
 
 ## Environment Variables Required
@@ -61,7 +63,7 @@ VAPID_PRIVATE_KEY=generated_vapid_private_key
 COMPLIANCE_PUBLIC_KEY=base64_encoded_public_key
 ```
 
-The main backend **requires** Firebase for Android push (FCM). It is not generated into `.env`: `docker-compose.yml` sets `FIREBASE_CERT` and read-only-mounts `backend/firebase-cert.json` from the repo. Place your Firebase service account JSON at `backend/firebase-cert.json` before `docker compose up` (gitignored; excluded from the image build via the repo-root `.dockerignore`).
+The main backend **requires** Firebase for Android push (FCM). It is not generated into `.env`. The code loads `backend/firebase-cert.json` (path fixed relative to the backend tree); `docker-compose.yml` read-only-mounts that file into the container. Place your Firebase service account JSON at `backend/firebase-cert.json` before `docker compose up` (gitignored; excluded from the image build via the repo-root `.dockerignore`).
 
 ## Deployment Commands
 
@@ -85,10 +87,10 @@ For local development, set `SERVICE_MODE=development` to run all services in a s
 
 ## Network Architecture
 
-- **public**: External client access (main service, frontend, reverse proxy)
-- **services**: Internal service communication only (database, messaging, file storage)
-- Messaging and file storage services have NO external network access
-- All inter-service communication is HTTP-based with proper authentication
+- **public**: External client access (main service, frontend, reverse proxy). Main is also on `services` so it can reach Postgres, messaging, and file_storage.
+- **services**: Internal bridge (`internal: true`). Postgres, messaging, file_storage, and main. The **frontend** is on both `public` and `services` so the Node server can reach `main` and `file_storage` (`FILE_STORAGE_HOST`) for SSR/proxy paths without exposing those backends on `public` directly.
+- Messaging and file_storage are **not** on `public` and cannot reach the internet.
+- Inter-service traffic is HTTP with shared middleware (request size cap, rate limits on internal apps).
 
 ## Database Schema Separation
 
