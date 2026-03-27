@@ -29,7 +29,7 @@ The application uses client-server encryption for direct messages (DMs). While r
 ### 3. Files Required
 
 - `compliance_keypair.txt` - Contains compliance X25519 keypair
-- `compliance_decryption.py` - Decryption script
+- `scripts/compliance/decryption/main.py` — decryption tool entrypoint
 - Message data extracted from the server
 
 ## Step-by-Step Instructions
@@ -70,11 +70,11 @@ The application uses client-server encryption for direct messages (DMs). While r
 
 1. Ensure you have the required files:
   - `compliance_keypair.txt` (compliance private key)
-  - `compliance_decryption.py` (decryption script)
+  - `scripts/compliance/decryption/main.py` (decryption tool)
   - `compliance_MESSAGE_ID.json` (extracted message data)
 2. Run the decryption:
   ```bash
-   python compliance_decryption.py decrypt --input-file compliance_MESSAGE_ID.json
+   python scripts/compliance/decryption/main.py decrypt --input-file compliance_MESSAGE_ID.json
   ```
 3. The script will output the decrypted message:
   ```
@@ -177,7 +177,7 @@ Response: JSON with encrypted message data
 ### Decryption Script
 
 ```bash
-python compliance_decryption.py decrypt --input-file <json_file>
+python scripts/compliance/decryption/main.py decrypt --input-file <json_file>
 ```
 
 **Requirements:**

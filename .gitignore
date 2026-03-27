@@ -590,3 +590,6 @@ compliance_keypair.txt
 backend/files
 *.db-wal
 *.db-shm
+
+!scripts/offline_python_linux_amd64/venv_linux_amd64/venv/
+!scripts/offline_python_linux_amd64/venv_linux_amd64/venv/lib

@@ -169,7 +169,7 @@ _do_backup_copy() {
 run_gen_compliance() {
   local tmp
   tmp="$(mktemp "${TMPDIR:-/tmp}/fromchat-compliance.XXXXXX")"
-  "$VENV_PY" scripts/generate_compliance_keypair.py --emit-key-lines </dev/null >"$tmp"
+  "$VENV_PY" scripts/compliance/keypair.py --emit-key-lines </dev/null >"$tmp"
   {
     IFS= read -r _COMPLIANCE_PRIVATE_B64
     IFS= read -r _COMPLIANCE_PUBLIC_B64

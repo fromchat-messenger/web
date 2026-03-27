@@ -501,7 +501,7 @@ async def extract_message_for_compliance(
         "data": compliance_data,
         "instructions": [
             "Transfer this data to an air-gapped machine",
-            "Use compliance_decryption.py decrypt --input-file <json_file>",
+            "Use scripts/compliance/decryption/main.py decrypt --input-file <json_file>",
             "Keep the compliance private key offline at all times"
         ]
     }
