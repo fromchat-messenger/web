@@ -173,8 +173,21 @@ export async function sendWithFiles(
 
     const transportPublicKey = ub64(transportPublicKeyB64);
 
-    // Transport-encrypt message (client-side transport only; server will envelope-encrypt)
-    const { client_public_key_b64, nonce_b64, ciphertext_b64 } = encryptWithTransportKey(plaintext || "", transportPublicKeyB64);
+    // One ephemeral keypair for message + all files (must match messaging service decrypt_transport_blob).
+    const ephemeralKeypair = tweetnacl.box.keyPair();
+    const messagePlaintextBytes = new TextEncoder().encode(plaintext || "");
+    const messageNonce = tweetnacl.randomBytes(tweetnacl.box.nonceLength);
+    const messageCiphertext = tweetnacl.box(
+        messagePlaintextBytes,
+        messageNonce,
+        transportPublicKey,
+        ephemeralKeypair.secretKey
+    );
+    const client_public_key_b64 = btoa(
+        String.fromCharCode.apply(null, Array.from(ephemeralKeypair.publicKey) as number[])
+    );
+    const nonce_b64 = btoa(String.fromCharCode.apply(null, Array.from(messageNonce) as number[]));
+    const ciphertext_b64 = btoa(String.fromCharCode.apply(null, Array.from(messageCiphertext) as number[]));
 
     const senderPublicKeyB64 = keys.publicKey ? btoa(String.fromCharCode.apply(null, Array.from(keys.publicKey) as number[])) : "";
 
@@ -197,7 +210,7 @@ export async function sendWithFiles(
             new Uint8Array(fileData),
             transportNonce,
             transportPublicKey,
-            keys.privateKey
+            ephemeralKeypair.secretKey
         );
         const transportEncryptedWithNonce = new Uint8Array(transportNonce.length + transportEncrypted.length);
         transportEncryptedWithNonce.set(transportNonce);

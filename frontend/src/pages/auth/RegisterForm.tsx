@@ -122,6 +122,11 @@ export function RegisterForm({ onSwitchMode }: RegisterFormProps) {
                     await api.user.auth.ensureKeysOnLogin(password, data.token);
                 } catch (e) {
                     console.error("Key setup failed:", e);
+                    try {
+                        await api.user.auth.syncPublicKeyToServerIfMissing(data.token);
+                    } catch (e2) {
+                        console.error("Public key re-sync failed:", e2);
+                    }
                 }
 
                 navigate("/chat");

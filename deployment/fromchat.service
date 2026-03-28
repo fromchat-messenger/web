@@ -10,11 +10,12 @@ StartLimitBurst=3
 Type=simple
 User=root
 Group=root
-ExecStart=/bin/docker compose up
-ExecStop=/bin/docker compose down
+ExecStart=/bin/bash -c "COMPOSE_PROFILES=production docker compose up --remove-orphans --force-recreate"
+ExecStop=/bin/bash -c "COMPOSE_PROFILES=production docker compose down --remove-orphans"
 WorkingDirectory=/home/denis0001-dev/actions-runner/_work/FromChat/FromChat/deployment
 Restart=always
 RestartSec=10
+StartLimitBurst=3
 
 # Security settings
 NoNewPrivileges=true

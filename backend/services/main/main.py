@@ -319,15 +319,6 @@ async def health_check():
     return {"status": "healthy", "service": "main"}
 
 
-@app.get("/key/public")
-async def key_public_proxy():
-    """
-    Proxy endpoint for messaging public key. In dev this calls the in-process function,
-    in production it will proxy to the external messaging service via the keys helper.
-    """
-    return await keys.get_public_key()
-
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8300"))

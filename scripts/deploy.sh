@@ -312,38 +312,39 @@ docker buildx use "$BUILDER_NAME" > /dev/null 2>&1
 # Detect services
 step "Detecting services"
 cd "$DEPLOYMENT_DIR"
+# Include profile-only services (e.g. caddy) so their images are built and pushed; otherwise prod keeps a stale Caddy image and ignores Caddyfile updates from rsync.
+export COMPOSE_PROFILES=production
 SERVICES=$(docker compose -f docker-compose.yml config --services 2>/dev/null)
 
 if [ -z "$SERVICES" ]; then
     error "No services found in docker-compose.yml"
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+    error "jq is required for deploy (e.g. brew install jq / sudo apt install jq)"
+    exit 1
+fi
+
+if ! COMPOSE_JSON=$(docker compose -f docker-compose.yml config --format json 2>/dev/null); then
+    error "docker compose config --format json failed (needs Docker Compose v2.10+)"
+    exit 1
+fi
+
 BUILT_IMAGES=()
 
 for SERVICE in $SERVICES; do
-    HAS_BUILD=$(docker compose -f docker-compose.yml config 2>/dev/null | \
-        grep -A 30 "^[[:space:]]*${SERVICE}:" | \
-        grep -q "build:" && echo "yes" || echo "no")
-    
-    if [ "$HAS_BUILD" != "yes" ]; then
+    if ! jq -e --arg s "$SERVICE" '(.services[$s].build // false) | type == "object"' <<< "$COMPOSE_JSON" >/dev/null 2>&1; then
         continue
     fi
-    
+
     IMAGE_TAG="${PROJECT_NAME}-${SERVICE}:latest"
-    
+
     substep "Building ${CYAN}$SERVICE${NC} -> ${CYAN}$IMAGE_TAG${NC}..."
-    
-    BUILD_OUTPUT=$(docker compose -f docker-compose.yml config 2>/dev/null | \
-        grep -A 15 "^[[:space:]]*${SERVICE}:" | \
-        grep -A 10 "build:")
-    
-    DOCKERFILE_REL=$(echo "$BUILD_OUTPUT" | grep "dockerfile:" | \
-        sed 's/.*dockerfile:[[:space:]]*\(.*\)/\1/' | \
-        tr -d '"' | tr -d "'" | xargs)
-    
-    CONTEXT_REL=$(echo "$BUILD_OUTPUT" | grep "context:" | \
-        sed 's/.*context:[[:space:]]*\(.*\)/\1/' | \
-        tr -d '"' | tr -d "'" | xargs)
+
+    DOCKERFILE_REL=$(jq -r --arg s "$SERVICE" '.services[$s].build.dockerfile // empty' <<< "$COMPOSE_JSON")
+    CONTEXT_REL=$(jq -r --arg s "$SERVICE" '.services[$s].build.context // empty' <<< "$COMPOSE_JSON")
+    # Multi-stage deployment/Dockerfile: without --target, the final stage (file_storage) is always tagged.
+    BUILD_TARGET=$(jq -r --arg s "$SERVICE" '.services[$s].build.target // empty' <<< "$COMPOSE_JSON")
     
     if [ -z "$CONTEXT_REL" ]; then
         CONTEXT_REL=".."
@@ -377,12 +378,13 @@ for SERVICE in $SERVICES; do
         fi
     fi
     
-    if docker buildx build \
-        --platform "$PLATFORM" \
-        --file "$DOCKERFILE" \
-        --tag "$IMAGE_TAG" \
-        --load \
-        "$BUILD_CONTEXT"; then
+    BUILDX_ARGS=(buildx build --platform "$PLATFORM" --file "$DOCKERFILE" --tag "$IMAGE_TAG" --load)
+    if [ -n "$BUILD_TARGET" ]; then
+        BUILDX_ARGS+=(--target "$BUILD_TARGET")
+    fi
+    BUILDX_ARGS+=("$BUILD_CONTEXT")
+
+    if docker "${BUILDX_ARGS[@]}"; then
         echo -e "  ${GREEN}✓${NC} Built ${CYAN}$SERVICE${NC}"
         BUILT_IMAGES+=("$IMAGE_TAG")
         echo ""
@@ -413,12 +415,7 @@ COMPOSE_SERVICES=$(docker compose -f docker-compose.yml config --services 2>/dev
 IMAGES=()
 
 for S in $COMPOSE_SERVICES; do
-    # Try to read explicit image: field from the compose config for this service
-    IMAGE_FROM_COMPOSE=$(docker compose -f docker-compose.yml config 2>/dev/null | \
-        grep -A5 "^[[:space:]]*${S}:" | \
-        grep -m1 "image:" || true)
-
-    IMAGE_FROM_COMPOSE=$(echo "$IMAGE_FROM_COMPOSE" | sed 's/.*image:[[:space:]]*//' | tr -d '"' | tr -d "'" | xargs || true)
+    IMAGE_FROM_COMPOSE=$(jq -r --arg s "$S" '.services[$s].image // empty' <<< "$COMPOSE_JSON")
 
     if [ -n "$IMAGE_FROM_COMPOSE" ]; then
         IMAGES+=("$IMAGE_FROM_COMPOSE")
@@ -520,11 +517,11 @@ step "Transferring deployment files"
 if [ -n "$SUDO_PASSWORD" ]; then
     ssh "$SERVER" bash << REMOTE_SUDO_SCRIPT > /dev/null 2>&1
 set -e
-echo '$SUDO_PASSWORD' | sudo -S -p '' mkdir -p $DEPLOY_PATH/deployment 2>/dev/null || true
-echo '$SUDO_PASSWORD' | sudo -S -p '' chown -R \$(whoami):\$(whoami) $DEPLOY_PATH/deployment 2>/dev/null || true
+echo '$SUDO_PASSWORD' | sudo -S -p '' mkdir -p $DEPLOY_PATH/deployment $DEPLOY_PATH/backend 2>/dev/null || true
+echo '$SUDO_PASSWORD' | sudo -S -p '' chown -R \$(whoami):\$(whoami) $DEPLOY_PATH/deployment $DEPLOY_PATH/backend 2>/dev/null || true
 REMOTE_SUDO_SCRIPT
 else
-    ssh "$SERVER" "sudo mkdir -p $DEPLOY_PATH/deployment && sudo chown -R \$(whoami):\$(whoami) $DEPLOY_PATH/deployment" > /dev/null 2>&1 || true
+    ssh "$SERVER" "sudo mkdir -p $DEPLOY_PATH/deployment $DEPLOY_PATH/backend && sudo chown -R \$(whoami):\$(whoami) $DEPLOY_PATH/deployment $DEPLOY_PATH/backend" > /dev/null 2>&1 || true
 fi
 
 # Copy deployment directory excluding gitignored files
@@ -561,9 +558,71 @@ else
     warning ".env.prod not found in deployment directory"
 fi
 
+# Firebase service account: bind-mounted at runtime (see docker-compose main volumes), never in the image (.dockerignore).
+# If compose ever ran without this file on the host, Docker may have created a directory at this path — remove it before scp.
+FIREBASE_CERT="$PROJECT_ROOT/backend/firebase-cert.json"
+substep "Firebase service account (runtime bind-mount: backend/firebase-cert.json)..."
+# ~ is not expanded inside variables on the remote shell (e.g. C="$D/..." with D=~/foo checks a bogus path). Resolve to an absolute path.
+DEPLOY_PATH_ON_SERVER=$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$SERVER" "eval echo $DEPLOY_PATH" 2>/dev/null || true)
+if [ -z "$DEPLOY_PATH_ON_SERVER" ]; then
+    DEPLOY_PATH_ON_SERVER=$DEPLOY_PATH
+fi
+FIREBASE_REMOTE="$DEPLOY_PATH_ON_SERVER/backend/firebase-cert.json"
+# Docker may have created this path as a root-owned directory; plain rm fails without sudo.
+if [ -n "$SUDO_PASSWORD" ]; then
+    ssh "$SERVER" bash << REMOTE_FIREBASE_CLEANUP > /dev/null 2>&1 || true
+set -e
+D=$DEPLOY_PATH_ON_SERVER
+C="\$D/backend/firebase-cert.json"
+mkdir -p "\$D/backend" 2>/dev/null || true
+if [ -d "\$C" ]; then
+    echo '$SUDO_PASSWORD' | sudo -S -p '' rm -rf "\$C"
+fi
+echo '$SUDO_PASSWORD' | sudo -S -p '' chown -R "\$(whoami):\$(whoami)" "\$D/backend" 2>/dev/null || true
+REMOTE_FIREBASE_CLEANUP
+else
+    QBASE=$(printf '%q' "$DEPLOY_PATH_ON_SERVER")
+    ssh "$SERVER" "D=$QBASE; C=\"\$D/backend/firebase-cert.json\"; mkdir -p \"\$D/backend\"; if [ -d \"\$C\" ]; then sudo rm -rf \"\$C\" 2>/dev/null || rm -rf \"\$C\"; fi; sudo chown -R \$(whoami):\$(whoami) \"\$D/backend\" 2>/dev/null || true" > /dev/null 2>&1 || true
+fi
+
+while true; do
+    if [ -f "$FIREBASE_CERT" ]; then
+        break
+    fi
+    if [ -d "$FIREBASE_CERT" ]; then
+        echo -e "  ${YELLOW}⚠${NC} $FIREBASE_CERT is a directory. Delete it and save the Firebase service account JSON as a file at that exact path."
+    elif [ -e "$FIREBASE_CERT" ]; then
+        echo -e "  ${YELLOW}⚠${NC} $FIREBASE_CERT exists but is not a regular file."
+    else
+        echo -e "  ${YELLOW}⚠${NC} Missing $FIREBASE_CERT (Firebase service account JSON for FCM)."
+    fi
+    echo -e "  ${CYAN}Fix this, then press Enter to check again (Ctrl+C to abort deploy).${NC}"
+    read -r _
+done
+
+substep "Copying backend/firebase-cert.json..."
+FIREBASE_SCP_LOG="/tmp/fromchat-firebase-scp-$$.log"
+if ! scp "$FIREBASE_CERT" "$SERVER:$FIREBASE_REMOTE" >"$FIREBASE_SCP_LOG" 2>&1; then
+    error "Failed to copy firebase-cert.json to server"
+    echo -e "  ${YELLOW}Target:${NC} $SERVER:$FIREBASE_REMOTE" >&2
+    if [ -s "$FIREBASE_SCP_LOG" ]; then
+        sed 's/^/  /' "$FIREBASE_SCP_LOG" >&2
+    else
+        echo -e "  ${YELLOW}(scp produced no output.)${NC}" >&2
+    fi
+    rm -f "$FIREBASE_SCP_LOG"
+    exit 1
+fi
+rm -f "$FIREBASE_SCP_LOG"
+ssh "$SERVER" "chmod 600 $(printf '%q' "$FIREBASE_REMOTE") 2>/dev/null || true"
+if ! ssh "$SERVER" "test -f $(printf '%q' "$FIREBASE_REMOTE")"; then
+    error "Server path is not a regular file after copy: $FIREBASE_REMOTE"
+    exit 1
+fi
+
 # Deploy on server
 step "Deploying on server"
-ssh "$SERVER" SUDO_PASSWORD="$SUDO_PASSWORD" DEPLOY_PATH="$DEPLOY_PATH" bash << 'REMOTE_SCRIPT'
+ssh "$SERVER" SUDO_PASSWORD="$SUDO_PASSWORD" DEPLOY_PATH="${DEPLOY_PATH_ON_SERVER:-$DEPLOY_PATH}" bash << 'REMOTE_SCRIPT'
 set -e
 
 REMOTE_SUDO_PASS="${SUDO_PASSWORD:-}"
@@ -583,7 +642,7 @@ if [ -z "$REMOTE_DEPLOY_PATH" ]; then
     exit 1
 fi
 
-mkdir -p "$REMOTE_DEPLOY_PATH/deployment"
+mkdir -p "$REMOTE_DEPLOY_PATH/deployment" "$REMOTE_DEPLOY_PATH/backend"
 cd "$REMOTE_DEPLOY_PATH/deployment"
 
 if [ ! -f "$REMOTE_DEPLOY_PATH/deployment/.env" ]; then
@@ -594,7 +653,7 @@ if systemctl is-active --quiet fromchat; then
     sudo_cmd systemctl stop fromchat
 fi
 
-docker compose down > /dev/null 2>&1 || true
+COMPOSE_PROFILES=production docker compose down --remove-orphans > /dev/null 2>&1 || true
 
 sudo_cmd cp -f "$REMOTE_DEPLOY_PATH/deployment/fromchat.service" /etc/systemd/system/fromchat.service
 sudo_cmd systemctl daemon-reload

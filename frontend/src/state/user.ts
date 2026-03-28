@@ -79,6 +79,11 @@ export const useUserStore = create<UserStore>((set) => ({
                 if (fullResponse.ok) {
                     const user: User = await fullResponse.json();
                     api.user.auth.restoreKeys();
+                    try {
+                        await api.user.auth.syncPublicKeyToServerIfMissing(token);
+                    } catch (e) {
+                        console.error("Public key sync to server failed:", e);
+                    }
 
                     if (user.suspended) {
                         set({

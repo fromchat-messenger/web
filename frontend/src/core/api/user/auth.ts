@@ -168,6 +168,22 @@ export async function ensureKeysOnLogin(password: string, token: string): Promis
 	return pair;
 }
 
+/**
+ * When the client already has a keypair (e.g. from localStorage) but the server has no public key row,
+ * upload the public key. Covers failed uploads during login, DB resets, and legacy accounts.
+ */
+export async function syncPublicKeyToServerIfMissing(token: string): Promise<void> {
+	const keys = getCurrentKeys();
+	if (!keys?.publicKey?.length || !keys?.privateKey?.length) {
+		return;
+	}
+	const serverPk = await fetchPublicKey(token);
+	if (serverPk) {
+		return;
+	}
+	await uploadPublicKey(keys.publicKey, token);
+}
+
 export function restoreKeys() {
 	currentPublicKey = ub64(localStorage.getItem("publicKey")!);
 	currentPrivateKey = ub64(localStorage.getItem("privateKey")!);

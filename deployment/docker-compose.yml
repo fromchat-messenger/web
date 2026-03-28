@@ -172,7 +172,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - caddy_data:/root/site/certs
+      - caddy:/root/site/certs
     environment:
       XDG_DATA_HOME: /root/site/certs
       XDG_CONFIG_HOME: /root/site/certs

@@ -137,7 +137,8 @@ def decrypt_transport_blob(
     ephemeral transport private key and the client's public key.
 
     Args:
-        client_public_key_b64: Sender public key in base64 (raw X25519).
+        client_public_key_b64: Client ephemeral public key in base64 (raw X25519),
+            the same key as used for the transport-encrypted message body.
         encrypted_blob: Raw bytes of `nonce || ciphertext`.
         ephemeral_private_key: Server ephemeral X25519 private key.
         nonce_size: Nonce size in bytes (24 for XSalsa20-Poly1305).

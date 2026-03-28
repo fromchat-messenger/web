@@ -6,8 +6,7 @@ providing compliance access while ensuring zero-knowledge storage of plaintext c
 
 API Endpoints:
 - GET /health: Health check
-- GET /key/public: Get current ephemeral transport public key
-- POST /key/invalidate: Rotate ephemeral keys
+- GET /key/transport/public: Get current ephemeral transport public key
 - POST /process: Process encrypted message through envelope encryption pipeline
 """
 
@@ -203,7 +202,8 @@ class ProcessMessageRequest(BaseModel):
 
 class ProcessMessageWithFilesFile(BaseModel):
     """
-    A single transport-encrypted file blob (base64 of nonce||ciphertext).
+    A single transport-encrypted file blob (base64 of nonce||ciphertext),
+    encrypted with the same ephemeral client key as the message body.
     """
     encrypted_file_data_b64: str
     filename: str = "file"
@@ -213,6 +213,8 @@ class ProcessMessageWithFilesRequest(ProcessMessageRequest):
     """
     Process a transport-encrypted message and a list of transport-encrypted files
     using a single MEK for the whole envelope.
+
+    Each file blob uses the same client_public_key_b64 / X25519 ephemeral pair as the message.
     """
     files: list[ProcessMessageWithFilesFile]
 
@@ -353,6 +355,9 @@ async def process_message_with_files(
 ):
     """
     In-process helper: process message + transport-encrypted files with one MEK.
+
+    File blobs must be encrypted with the same ephemeral client key as the message
+    (same client_public_key_b64), not the sender's long-term identity key.
     transport_files: list of {"encrypted_file_data_b64": str, "filename": str}
     """
     private_key = _get_ephemeral_private_key()
@@ -371,7 +376,7 @@ async def process_message_with_files(
         transport_blob = base64.b64decode(enc_b64)
         plaintext_files.append(
             decrypt_transport_blob(
-                client_public_key_b64=sender_public_key_b64,
+                client_public_key_b64=client_public_key_b64,
                 encrypted_blob=transport_blob,
                 ephemeral_private_key=private_key,
             )
@@ -393,8 +398,8 @@ async def process_message_with_files_http(request: ProcessMessageWithFilesReques
     """
     Process an encrypted message and its files using a single MEK.
 
-    - Message transport layer is decrypted using the message client ephemeral key
-    - File transport layer is decrypted using the sender long-term public key
+    - Message and file transport layers use the same client ephemeral X25519 keypair
+      (client_public_key_b64); files are NaCl box ciphertexts to the server transport key
     - One MEK is generated and used to encrypt message + all files
     - MEK is wrapped for compliance, sender, and recipient (stored on DM envelope)
     """

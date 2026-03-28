@@ -1,7 +1,6 @@
 fromchat.ru {
-	reverse_proxy 172.18.0.1:8301 host.docker.internal:8301 172.17.0.1:8301 {
-		lb_policy first
-        header_up X-Real-IP {remote_host}
+	reverse_proxy frontend:8301 {
+		header_up X-Real-IP {remote_host}
 	}
 
 	# Security headers

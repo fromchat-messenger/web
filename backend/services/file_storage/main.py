@@ -92,13 +92,14 @@ from fastapi import UploadFile, File, HTTPException, Request, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-# File serving directories (matching main service structure)
-FILES_BASE_DIR = Path("data/uploads/files")
-FILES_NORMAL_DIR = FILES_BASE_DIR / "normal"
-FILES_ENCRYPTED_DIR = FILES_BASE_DIR / "encrypted"
-
 # Base storage directories
 BASE_DIR = Path("files")
+# Legacy upload layout (was data/uploads/files on monolith main under /app/data).
+# Keep under BASE_DIR so Docker uses the file_storage volume (/app/files), not /app/data
+# (different uid / optional mount → PermissionError on prod).
+FILES_BASE_DIR = BASE_DIR / "data" / "uploads" / "files"
+FILES_NORMAL_DIR = FILES_BASE_DIR / "normal"
+FILES_ENCRYPTED_DIR = FILES_BASE_DIR / "encrypted"
 FILES_DIR = BASE_DIR / "files"
 THUMBS_DIR = BASE_DIR / "thumbs"
 TMP_DIR = BASE_DIR / "tmp"
