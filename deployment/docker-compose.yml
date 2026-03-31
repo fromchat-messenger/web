@@ -167,8 +167,8 @@ services:
       - production
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -178,6 +178,22 @@ services:
       XDG_CONFIG_HOME: /root/site/certs
     networks:
       - public
+
+  haproxy:
+    image: haproxy:latest
+    profiles:
+      - production
+    restart: unless-stopped
+    network_mode: host
+    # Image defaults to USER haproxy (non-root); that user cannot bind 80/443 on host.
+    # Rootful Docker does not change that — only the container user does.
+    user: "0:0"
+    cap_add:
+      - NET_BIND_SERVICE
+    depends_on:
+      - caddy
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
 
   postgres:
     build:

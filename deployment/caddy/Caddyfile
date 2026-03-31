@@ -1,3 +1,18 @@
+{
+	servers {
+		listener_wrappers {
+			proxy_protocol
+			tls
+		}
+
+		# Only trust PROXY protocol from local forwarder.
+		trusted_proxies static 127.0.0.1/32 ::1/128
+	}
+
+	http_port 8080
+	https_port 8443
+}
+
 fromchat.ru {
 	reverse_proxy frontend:8301 {
 		header_up X-Real-IP {remote_host}
@@ -102,12 +117,4 @@ git.fromchat.ru {
 			events 500
 		}
 	}
-}
-
-api.getgadgets.toolbox-io.ru {
-    reverse_proxy 95.165.0.162:8400
-}
-
-getgadgets.toolbox-io.ru {
-    reverse_proxy 95.165.0.162:8401
 }
