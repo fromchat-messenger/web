@@ -1,2 +1,46 @@
+# Shared build context ignore (used by deployment images with context: ..)
+
+# VCS / editor
+.git
+.github
+.idea
+.vscode
+.DS_Store
+
+# Secrets / local env
+.env
+deployment/.env
+
+# Node
+node_modules
+npm-debug.log
+.vite
+dist
+dist-electron
+build
+out
+coverage
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints
+.venv
+venv/
+
+# App runtime data/logs (mounted, not baked)
+backend/data
+backend/files
+data
+logs
+**/logs
+**/logs/**
+*.log
+
+# Deploy cache (hashes)
+.deploy-cache
+
 # Firebase cert: bind-mounted at runtime; do not send to docker build context
 firebase-cert.json

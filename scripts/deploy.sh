@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Complete deployment script: build and push to server
 # Usage: ./scripts/deploy.sh [server_user@server_host] [deployment_path] [platform]
@@ -22,7 +22,7 @@ warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 error() { echo -e "${RED}✗${NC} $1"; }
 step() { echo -e "${CYAN}${BOLD}→${NC} ${BOLD}$1${NC}"; }
 substep() { 
-    if [ "$2" = "-n" ]; then
+    if [ "${2:-}" = "-n" ]; then
         echo -n -e "  ${GREEN}•${NC} $1"
     else
         echo -e "  ${GREEN}•${NC} $1"
@@ -64,6 +64,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEPLOYMENT_DIR="$PROJECT_ROOT/deployment"
 ENV_FILE="$DEPLOYMENT_DIR/.env"
+INPUT_HASH_TOOL="$SCRIPT_DIR/docker_inputs_hash.py"
+LOCAL_CACHE_ROOT="$PROJECT_ROOT/.deploy-cache"
+LOCAL_IMAGE_CACHE_DIR="$LOCAL_CACHE_ROOT/images"
+
+# Ensure arrays exist even when build is skipped (nounset-safe).
+declare -a BUILT_IMAGES
 
 # Load .env file if it exists
 if [ -f "$ENV_FILE" ]; then
@@ -101,6 +107,37 @@ USE_DOCKER_BUILD=false
 if [ -n "$HOST_ARCH" ] && [ "$HOST_ARCH" = "$PLATFORM_ARCH" ]; then
     USE_DOCKER_BUILD=true
 fi
+
+sanitize_ref() {
+    # Replace characters that are problematic for file paths.
+    # Example: "foo/bar:baz" -> "foo_bar__baz"
+    local s="$1"
+    s="${s//\//_}"
+    s="${s//:/__}"
+    s="${s//@/__at__}"
+    echo "$s"
+}
+
+read_file_if_exists() {
+    local p="$1"
+    if [ -f "$p" ]; then
+        cat "$p"
+    fi
+}
+
+# Docker's top-level image Id can differ for the same layers (OCI index vs image, BuildKit attestations).
+# Compare a fingerprint of the final layer stack instead.
+get_local_image_layer_fp() {
+    local img="$1"
+    docker image inspect -f '{{json .RootFS.Layers}}' "$img" 2>/dev/null \
+        | openssl dgst -sha256 2>/dev/null | awk '{print $2}' || true
+}
+
+compute_inputs_hash() {
+    local context="$1"
+    local dockerfile="$2"
+    python3 "$INPUT_HASH_TOOL" --context "$context" --dockerfile "$dockerfile"
+}
 
 # Check if server is provided
 if [ -z "$SERVER" ]; then
@@ -299,6 +336,12 @@ if ! COMPOSE_JSON=$(docker compose -f docker-compose.yml config --format json 2>
 fi
 
 BUILT_IMAGES=()
+PUSHABLE_IMAGES=()
+PUSHABLE_SERVICES=()
+PUSHABLE_SERVICE_DOCKERFILES=()
+PUSHABLE_SERVICE_CONTEXTS=()
+PUSHABLE_SERVICE_TARGETS=()
+PUSHABLE_IMAGE_INPUT_HASHES=()
 
 for SERVICE in $SERVICES; do
     if ! jq -e --arg s "$SERVICE" '(.services[$s].build // false) | type == "object"' <<< "$COMPOSE_JSON" >/dev/null 2>&1; then
@@ -306,8 +349,6 @@ for SERVICE in $SERVICES; do
     fi
 
     IMAGE_TAG="${PROJECT_NAME}-${SERVICE}:latest"
-
-    substep "Building ${CYAN}$SERVICE${NC} -> ${CYAN}$IMAGE_TAG${NC}..."
 
     DOCKERFILE_REL=$(jq -r --arg s "$SERVICE" '.services[$s].build.dockerfile // empty' <<< "$COMPOSE_JSON")
     CONTEXT_REL=$(jq -r --arg s "$SERVICE" '.services[$s].build.context // empty' <<< "$COMPOSE_JSON")
@@ -345,443 +386,101 @@ for SERVICE in $SERVICES; do
             error "Could not determine Dockerfile for $SERVICE"
         fi
     fi
-    
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        DOCKER_BUILD_ARGS=(build --platform "$PLATFORM" --file "$DOCKERFILE" --tag "$IMAGE_TAG")
-        if [ -n "$BUILD_TARGET" ]; then
-            DOCKER_BUILD_ARGS+=(--target "$BUILD_TARGET")
-        fi
-        DOCKER_BUILD_ARGS+=("$BUILD_CONTEXT")
 
-        if docker "${DOCKER_BUILD_ARGS[@]}"; then
-            echo -e "  ${GREEN}✓${NC} Built ${CYAN}$SERVICE${NC}"
-            BUILT_IMAGES+=("$IMAGE_TAG")
-            echo ""
-        else
-            error "Build failed for $SERVICE"
-            exit 1
-        fi
-    else
-        # On macOS Docker Desktop, --load can hang for a long time at "sending tarball".
-        # Use the docker exporter explicitly to load into the local Docker daemon.
-        BUILDX_ARGS=(buildx build --platform "$PLATFORM" --file "$DOCKERFILE" --tag "$IMAGE_TAG" --output=type=docker)
-        if [ -n "$BUILD_TARGET" ]; then
-            BUILDX_ARGS+=(--target "$BUILD_TARGET")
-        fi
-        BUILDX_ARGS+=("$BUILD_CONTEXT")
-
-        if docker "${BUILDX_ARGS[@]}"; then
-            echo -e "  ${GREEN}✓${NC} Built ${CYAN}$SERVICE${NC}"
-            BUILT_IMAGES+=("$IMAGE_TAG")
-            echo ""
-        else
-            error "Build failed for $SERVICE"
-            exit 1
-        fi
-    fi
-
-    true
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
+    if [ ! -f "$INPUT_HASH_TOOL" ]; then
+        error "Missing $INPUT_HASH_TOOL (needed for dependency hashing)"
+        exit 1
     fi
 
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = true ]; then
-        true
-    fi
-
-    if [ "$USE_DOCKER_BUILD" = false ]; then
-        true
-    fi
+    INPUT_HASH=$(compute_inputs_hash "$BUILD_CONTEXT" "$DOCKERFILE")
 
-    true
+    PUSHABLE_SERVICES+=("$SERVICE")
+    PUSHABLE_IMAGES+=("$IMAGE_TAG")
+    PUSHABLE_SERVICE_DOCKERFILES+=("$DOCKERFILE")
+    PUSHABLE_SERVICE_CONTEXTS+=("$BUILD_CONTEXT")
+    PUSHABLE_SERVICE_TARGETS+=("$BUILD_TARGET")
+    PUSHABLE_IMAGE_INPUT_HASHES+=("$INPUT_HASH")
 done
 
-success "Build complete! ${#BUILT_IMAGES[@]} image(s) ready"
+mkdir -p "$LOCAL_IMAGE_CACHE_DIR"
+
+SERVICES_TO_BUILD=()
+IMAGES_TO_BUILD=()
+INPUT_HASHES_TO_BUILD=()
+DOCKERFILES_TO_BUILD=()
+CONTEXTS_TO_BUILD=()
+TARGETS_TO_BUILD=()
+
+for i in "${!PUSHABLE_SERVICES[@]}"; do
+    SERVICE="${PUSHABLE_SERVICES[$i]}"
+    IMAGE_TAG="${PUSHABLE_IMAGES[$i]}"
+    INPUT_HASH="${PUSHABLE_IMAGE_INPUT_HASHES[$i]}"
+    DOCKERFILE="${PUSHABLE_SERVICE_DOCKERFILES[$i]}"
+    BUILD_CONTEXT="${PUSHABLE_SERVICE_CONTEXTS[$i]}"
+    BUILD_TARGET="${PUSHABLE_SERVICE_TARGETS[$i]}"
+
+    CACHE_KEY="$(sanitize_ref "$IMAGE_TAG")"
+    CACHE_FILE="$LOCAL_IMAGE_CACHE_DIR/$CACHE_KEY/input.sha256"
+    PREV_HASH="$(read_file_if_exists "$CACHE_FILE")"
+    LOCAL_FP="$(get_local_image_layer_fp "$IMAGE_TAG")"
+
+    if [ -n "$PREV_HASH" ] && [ "$PREV_HASH" = "$INPUT_HASH" ] && [ -n "$LOCAL_FP" ]; then
+        continue
+    fi
+
+    SERVICES_TO_BUILD+=("$SERVICE")
+    IMAGES_TO_BUILD+=("$IMAGE_TAG")
+    INPUT_HASHES_TO_BUILD+=("$INPUT_HASH")
+    DOCKERFILES_TO_BUILD+=("$DOCKERFILE")
+    CONTEXTS_TO_BUILD+=("$BUILD_CONTEXT")
+    TARGETS_TO_BUILD+=("$BUILD_TARGET")
+done
+
+if [ ${#SERVICES_TO_BUILD[@]} -eq 0 ]; then
+    success "Build skipped (no Docker inputs changed)"
+else
+    step "Building ${#SERVICES_TO_BUILD[@]} service(s)"
+
+    if [ "$USE_DOCKER_BUILD" = true ]; then
+        # Same-arch fast path: build with Docker Compose (requested).
+        # Ensure the project name is stable so the resulting tags match our expectations.
+        COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f docker-compose.yml --profile production build "${SERVICES_TO_BUILD[@]}"
+    else
+        for i in "${!SERVICES_TO_BUILD[@]}"; do
+            SERVICE="${SERVICES_TO_BUILD[$i]}"
+            IMAGE_TAG="${IMAGES_TO_BUILD[$i]}"
+            DOCKERFILE="${DOCKERFILES_TO_BUILD[$i]}"
+            BUILD_CONTEXT="${CONTEXTS_TO_BUILD[$i]}"
+            BUILD_TARGET="${TARGETS_TO_BUILD[$i]}"
+
+            substep "Building ${CYAN}$SERVICE${NC} -> ${CYAN}$IMAGE_TAG${NC}..."
+
+            # On macOS Docker Desktop, --load can hang for a long time at "sending tarball".
+            # Use the docker exporter explicitly to load into the local Docker daemon.
+            BUILDX_ARGS=(buildx build --platform "$PLATFORM" --file "$DOCKERFILE" --tag "$IMAGE_TAG" --output=type=docker --provenance=false --sbom=false)
+            if [ -n "$BUILD_TARGET" ]; then
+                BUILDX_ARGS+=(--target "$BUILD_TARGET")
+            fi
+            BUILDX_ARGS+=("$BUILD_CONTEXT")
+
+            if ! docker "${BUILDX_ARGS[@]}"; then
+                error "Build failed for $SERVICE"
+                exit 1
+            fi
+        done
+    fi
+
+    for i in "${!SERVICES_TO_BUILD[@]}"; do
+        IMAGE_TAG="${IMAGES_TO_BUILD[$i]}"
+        INPUT_HASH="${INPUT_HASHES_TO_BUILD[$i]}"
+        CACHE_KEY="$(sanitize_ref "$IMAGE_TAG")"
+        mkdir -p "$LOCAL_IMAGE_CACHE_DIR/$CACHE_KEY"
+        printf "%s" "$INPUT_HASH" > "$LOCAL_IMAGE_CACHE_DIR/$CACHE_KEY/input.sha256"
+        BUILT_IMAGES+=("$IMAGE_TAG")
+    done
+
+    success "Build complete! ${#BUILT_IMAGES[@]} image(s) built"
+fi
 
 # ============================================================================
 # DEPLOY PHASE
@@ -837,31 +536,36 @@ fi
 BUILT_COUNT=${#BUILT_IMAGES[@]}
 MATCHING_BUILT=0
 MISSING_FROM_DETECTED=()
-for BI in "${BUILT_IMAGES[@]}"; do
-    found=false
-    for DI in "${PUSH_IMAGES[@]}"; do
-        if [ "$BI" = "$DI" ]; then
-            found=true
-            break
+# Bash 3.2 + set -u: "${arr[@]}" on an empty array can error; guard with length.
+if ((${#BUILT_IMAGES[@]} > 0)); then
+    for BI in "${BUILT_IMAGES[@]}"; do
+        found=false
+        for DI in "${PUSH_IMAGES[@]}"; do
+            if [ "$BI" = "$DI" ]; then
+                found=true
+                break
+            fi
+        done
+        if [ "$found" = true ]; then
+            MATCHING_BUILT=$((MATCHING_BUILT + 1))
+        else
+            MISSING_FROM_DETECTED+=("$BI")
         fi
     done
-    if [ "$found" = true ]; then
-        MATCHING_BUILT=$((MATCHING_BUILT + 1))
-    else
-        MISSING_FROM_DETECTED+=("$BI")
-    fi
-done
+fi
 
 # Also list push images that weren't built locally (these are likely prebuilt local images)
 NOT_BUILT_DETECTED=()
 for DI in "${PUSH_IMAGES[@]}"; do
     built=false
-    for BI in "${BUILT_IMAGES[@]}"; do
-        if [ "$DI" = "$BI" ]; then
-            built=true
-            break
-        fi
-    done
+    if ((${#BUILT_IMAGES[@]} > 0)); then
+        for BI in "${BUILT_IMAGES[@]}"; do
+            if [ "$DI" = "$BI" ]; then
+                built=true
+                break
+            fi
+        done
+    fi
     if [ "$built" = false ]; then
         NOT_BUILT_DETECTED+=("$DI")
     fi
@@ -883,33 +587,59 @@ if [ ${#PUSH_IMAGES[@]} -eq 0 ] && [ ${#EXTERNAL_IMAGES[@]} -eq 0 ]; then
     error "No images found in docker-compose.yml or built locally for project ${PROJECT_NAME}"
 fi
 
-# Pre-pull unregistry image if needed
-UNREGISTRY_IMAGE="ghcr.io/psviderski/unregistry"
-if ! ssh "$SERVER" "sudo docker images --format '{{.Repository}}:{{.Tag}}' | grep -q '^${UNREGISTRY_IMAGE}$'" 2>/dev/null; then
-    substep "Pulling unregistry image (one-time setup)..."
-    ssh -tt "$SERVER" "sudo docker pull ${UNREGISTRY_IMAGE}"
+# Transfer images — only what was rebuilt this run (BUILT_IMAGES). No remote hash/fingerprint checks.
+step "Transferring images"
+
+IMAGES_TO_PUSH=()
+if ((${#BUILT_IMAGES[@]} > 0)); then
+    for PI in "${PUSH_IMAGES[@]}"; do
+        for BI in "${BUILT_IMAGES[@]}"; do
+            if [ "$PI" = "$BI" ]; then
+                IMAGES_TO_PUSH+=("$PI")
+                break
+            fi
+        done
+    done
 fi
 
-# Transfer images
-step "Transferring images"
-for IMAGE in "${PUSH_IMAGES[@]}"; do
-    substep "Pushing ${CYAN}$IMAGE${NC}..."
-    if docker pussh "$IMAGE" "$SERVER"; then
-        echo ""
-    else
-        echo -e "  ${RED}✗${NC} Failed to push ${CYAN}$IMAGE${NC}"
-        echo ""
-        exit 1
+if [ ${#IMAGES_TO_PUSH[@]} -eq 0 ]; then
+    success "Skipping image push (nothing was rebuilt this run)"
+else
+    UNREGISTRY_IMAGE="ghcr.io/psviderski/unregistry"
+    if ! ssh "$SERVER" "sudo docker images --format '{{.Repository}}:{{.Tag}}' | grep -q '^${UNREGISTRY_IMAGE}$'" 2>/dev/null; then
+        substep "Pulling unregistry image (one-time setup)..."
+        if [ -n "${SUDO_PASSWORD:-}" ]; then
+            ssh "$SERVER" "echo '$SUDO_PASSWORD' | sudo -S -p '' docker pull ${UNREGISTRY_IMAGE}"
+        else
+            ssh "$SERVER" "sudo docker pull ${UNREGISTRY_IMAGE}"
+        fi
     fi
-done
+    for IMAGE in "${IMAGES_TO_PUSH[@]}"; do
+        substep "Pushing ${CYAN}$IMAGE${NC}..."
+        if ! docker pussh "$IMAGE" "$SERVER"; then
+            echo -e "  ${RED}✗${NC} Failed to push ${CYAN}$IMAGE${NC}"
+            echo ""
+            exit 1
+        fi
+        echo ""
+    done
+fi
 
 # Pull external images directly on the server (no pussh)
 if [ ${#EXTERNAL_IMAGES[@]} -gt 0 ]; then
     step "Pulling external images on server"
     for IMAGE in "${EXTERNAL_IMAGES[@]}"; do
         substep "Pulling ${CYAN}$IMAGE${NC}..."
-        # Allocate a TTY and do not redirect output so failures are visible.
-        if ssh -tt "$SERVER" "sudo docker pull $(printf '%q' "$IMAGE")"; then
+        QIMG=$(printf '%q' "$IMAGE")
+        if [ -n "${SUDO_PASSWORD:-}" ]; then
+            if ssh "$SERVER" "echo '$SUDO_PASSWORD' | sudo -S -p '' docker pull $QIMG"; then
+                echo ""
+            else
+                echo -e "  ${RED}✗${NC} Failed to pull ${CYAN}$IMAGE${NC} on server"
+                echo ""
+                exit 1
+            fi
+        elif ssh "$SERVER" "sudo docker pull $QIMG"; then
             echo ""
         else
             echo -e "  ${RED}✗${NC} Failed to pull ${CYAN}$IMAGE${NC} on server"
