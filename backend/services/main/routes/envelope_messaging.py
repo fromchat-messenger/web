@@ -14,7 +14,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
 import httpx
+from nacl.exceptions import CryptoError
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -376,6 +378,20 @@ async def send_encrypted_message(
 
     except HTTPException:
         raise
+    except CryptoError as e:
+        logger.warning(
+            "DM send: transport NaCl decrypt failed (message/file key mismatch or corrupt ciphertext): %s",
+            e,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Transport decryption failed: the encrypted message and each attachment must be "
+                "encrypted with the same client ephemeral keypair. For resumable uploads, the "
+                "ciphertext bytes on the server must match the transport fields in this request—"
+                "re-encrypt on the client or abort the upload session and start over."
+            ),
+        ) from e
     except Exception as e:
         logger.exception("Error sending encrypted message: %s", e)
         raise HTTPException(

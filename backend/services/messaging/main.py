@@ -11,16 +11,20 @@ API Endpoints:
 """
 
 import logging
+import sys
 import time
 import base64
 import os
 from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, status
+from nacl.exceptions import CryptoError
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 
 logger = logging.getLogger("uvicorn.error")
+
+_B64_DECODE_KW = {"validate": True} if sys.version_info >= (3, 11) else {}
 
 # Import encryption modules
 from .encryption import generate_nonce, TRANSPORT_NONCE_SIZE, decrypt_transport_blob, decrypt_transport_message
@@ -371,16 +375,29 @@ async def process_message_with_files(
 
     plaintext_files: list[bytes] = []
     filenames: list[str] = []
-    for tf in transport_files:
+    for idx, tf in enumerate(transport_files):
         enc_b64 = tf.get("encrypted_file_data_b64", "")
-        transport_blob = base64.b64decode(enc_b64)
-        plaintext_files.append(
-            decrypt_transport_blob(
-                client_public_key_b64=client_public_key_b64,
-                encrypted_blob=transport_blob,
-                ephemeral_private_key=private_key,
+        try:
+            transport_blob = base64.b64decode(enc_b64, **_B64_DECODE_KW)
+        except Exception as e:
+            logger.error("Invalid base64 for transport file index=%s filename=%r: %s", idx, tf.get("filename"), e)
+            raise
+        try:
+            plaintext_files.append(
+                decrypt_transport_blob(
+                    client_public_key_b64=client_public_key_b64,
+                    encrypted_blob=transport_blob,
+                    ephemeral_private_key=private_key,
+                )
             )
-        )
+        except Exception as e:
+            logger.error(
+                "Transport file decrypt failed index=%s filename=%r (check same ephemeral as message): %s",
+                idx,
+                tf.get("filename"),
+                e,
+            )
+            raise
         filenames.append(tf.get("filename", "file"))
 
     return process_encrypted_message_and_files(
@@ -417,6 +434,15 @@ async def process_message_with_files_http(request: ProcessMessageWithFilesReques
             recipient_public_key_b64=request.recipient_public_key_b64,
             transport_files=transport_files,
         )
+    except CryptoError as e:
+        logger.warning("process-with-files: transport CryptoError: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Transport decryption failed: message and files must use the same client ephemeral "
+                "key as when file ciphertext was produced."
+            ),
+        ) from e
     except Exception as e:
         logger.exception("Failed to process message with files: %s", e)
         raise

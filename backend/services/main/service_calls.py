@@ -10,6 +10,9 @@ import os
 import logging
 import json
 
+import httpx
+from fastapi import HTTPException, status
+
 # Import request models for in-process calls
 
 logger = logging.getLogger("uvicorn.error")
@@ -418,11 +421,23 @@ async def process_message_with_files_in_messaging_service(
         "files": transport_files,
     }
     try:
-        import httpx
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(url, json=payload)
             r.raise_for_status()
             return r.json()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == status.HTTP_400_BAD_REQUEST:
+            try:
+                body = e.response.json()
+                detail = body.get("detail", str(body)) if isinstance(body, dict) else str(body)
+            except Exception:
+                detail = (e.response.text or "").strip() or str(e)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=detail,
+            ) from e
+        logger.error("Failed to process message+files in messaging service: %s", e)
+        raise
     except Exception as e:
         logger.error("Failed to process message+files in messaging service: %s", e)
         raise
