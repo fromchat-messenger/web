@@ -1045,6 +1045,8 @@ class MessaggingSocketManager:
         elif update_type == "statusUpdate":
             # Deduplicate by user ID
             sig_data = {"type": update_type, "userId": data.get("userId")}
+        elif update_type == "registeredUserCount":
+            sig_data = {"type": update_type, "count": data.get("count")}
         else:
             # For unknown types, use full data (less efficient but safe)
             sig_data = {"type": update_type, "data": data}
@@ -1296,6 +1298,17 @@ class MessaggingSocketManager:
             # Only send to authenticated websockets (those with user_id set)
             if websocket in self.user_by_ws:
                 await self._send_update(websocket, message_type, update_data, db)
+
+    async def broadcast_registered_user_count(self, db: Session):
+        """Notify all clients of the current non-deleted user count (public chat member count)."""
+        try:
+            n = db.query(User).filter(User.deleted.is_(False)).count()
+        except Exception:
+            return
+        try:
+            await self.broadcast({"type": "registeredUserCount", "data": {"count": n}}, db)
+        except Exception:
+            pass
 
     async def send_update_to_user(self, user_id: int, update_type: str, update_data: dict, db: Session | None = None):
         """Send an update to a specific user (batched)"""

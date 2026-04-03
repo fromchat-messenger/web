@@ -1,7 +1,7 @@
 from datetime import datetime
 from collections import defaultdict, deque
 import time
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, text
 import uuid
@@ -23,6 +23,17 @@ router = APIRouter()
 _FAILED_ATTEMPT_WINDOW_SECONDS = 300
 _FAILED_ATTEMPT_THRESHOLD = 5
 _failed_login_attempts: dict[str, deque[float]] = defaultdict(deque)
+
+
+async def _broadcast_registered_user_count_task():
+    from ..db import SessionLocal
+    from .messaging import messagingManager
+
+    db = SessionLocal()
+    try:
+        await messagingManager.broadcast_registered_user_count(db)
+    finally:
+        db.close()
 
 
 def _record_failed_login(identifier: str) -> bool:
@@ -173,7 +184,12 @@ def login(request: Request, login_request: LoginRequest, db: Session = Depends(g
 
 @router.post("/register")
 @rate_limit_per_ip("3/hour")
-def register(request: Request, register_request: RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    request: Request,
+    register_request: RegisterRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     username = register_request.username.strip()
     display_name = register_request.display_name.strip()
     password = register_request.password.strip()
@@ -287,6 +303,8 @@ def register(request: Request, register_request: RegisterRequest, db: Session = 
         user_agent=user_agent_summary,
         owner=is_owner,
     )
+
+    background_tasks.add_task(_broadcast_registered_user_count_task)
 
     return {
         "status": "success",
@@ -550,6 +568,12 @@ async def _delete_user_data(user: User, db: Session):
         # Log error but don't fail the request
         pass
 
+    try:
+        from .messaging import messagingManager
+        await messagingManager.broadcast_registered_user_count(db)
+    except Exception:
+        pass
+
 
 @router.post("/delete")
 async def delete_account(
@@ -564,7 +588,7 @@ async def delete_account(
         raise HTTPException(status_code=400, detail="Cannot delete admin/owner account")
     
     await _delete_user_data(current_user, db)
-    
+
     log_security(
         "self_delete_account",
         severity="warning",

@@ -276,6 +276,16 @@ async def update_user_bio(
     }
 
 
+@router.get("/user/stats/registered-count")
+def get_registered_user_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Number of registered accounts (non-deleted users)."""
+    n = db.query(User).filter(User.deleted.is_(False)).count()
+    return {"count": n}
+
+
 @router.get("/user/{username}")
 async def get_user_by_username(
     username: str,

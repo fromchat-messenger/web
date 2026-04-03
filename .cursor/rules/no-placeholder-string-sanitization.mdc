@@ -1,0 +1,10 @@
+---
+description: Do not filter cache, API, or DB fields by matching fixed UI/placeholder English strings
+alwaysApply: true
+---
+
+# No magic-string “sanitization” of user or message data
+
+- **Never** strip, null out, or rewrite stored or displayed values by comparing them to hard-coded UI strings (e.g. `"Direct messages"`, `"Direct message"`, `"User 123"`, etc.). Those strings can be legitimate **usernames, display names, or message text**.
+- **Prefer**: fix the source (don’t persist placeholders; use `null`/absent fields; fix the writer). If legacy bad rows exist, use an explicit **schema/version/migration** or a **documented sentinel** agreed with the backend—not substring or equality checks on natural language.
+- Applies especially to: local storage/cache layers, list previews, and any code that “cleans” strings before show or read.
