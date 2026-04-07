@@ -441,7 +441,8 @@ def change_password(
 ):
     # Verify current derived password against stored hash
     if not verify_password(password_request.currentPasswordDerived.strip(), current_user.password_hash):
-        raise HTTPException(status_code=401, detail="Текущий пароль неверный")
+        # 400 (not 401): mobile client treats 401 as global auth failure and clears the session.
+        raise HTTPException(status_code=400, detail="Текущий пароль неверный")
 
     # Update password hash to hash of new derived password
     current_user.password_hash = get_password_hash(password_request.newPasswordDerived.strip())
