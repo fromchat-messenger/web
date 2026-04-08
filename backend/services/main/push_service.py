@@ -32,6 +32,12 @@ def _load_firebase_service_account_dict(cert_path: Path) -> dict:
 
 
 class PushNotificationService:
+    def _short_token(self, token: str) -> str:
+        value = (token or "").strip()
+        if len(value) <= 14:
+            return value
+        return f"...{value[-8:]}"
+
     def __init__(self):
         self.vapid_private_key = os.getenv("VAPID_PRIVATE_KEY")
         self.vapid_public_key = os.getenv("VAPID_PUBLIC_KEY")
@@ -87,16 +93,34 @@ class PushNotificationService:
 
     async def send_public_message_notification(self, db: Session, message: Message, exclude_user_id: Optional[int] = None):
         """Send push notification for a new public chat message"""
+        logger.info(
+            "send_public_message_notification start: message_id=%s sender_id=%s exclude_user=%s",
+            message.id,
+            message.user_id,
+            exclude_user_id,
+        )
         try:
             # Get all users except the sender
             users = db.query(User).filter(User.id != message.user_id)
             if exclude_user_id:
                 users = users.filter(User.id != exclude_user_id)
+            user_list = users.all()
+            logger.debug(
+                "send_public_message_notification targets=%s",
+                [user.id for user in user_list],
+            )
+            logger.info(
+                "send_public_message_notification user_count=%s for message_id=%s",
+                len(user_list),
+                message.id,
+            )
 
-            for user in users:
+            for user in user_list:
                 # Check if user has push subscription before trying to send
                 # Try all FCM tokens first (Android). If none or all fail, fall back to web push subscription.
                 fcm_rows = db.query(FcmToken).filter(FcmToken.user_id == user.id).all()
+                if not fcm_rows:
+                    logger.debug("No FCM tokens for user %s for message %s", user.id, message.id)
                 payload_data = {
                     "type": "public_message",
                     "message_id": message.id,
@@ -105,15 +129,41 @@ class PushNotificationService:
                 }
                 title = f"{message.author.username}"
                 body = message.content[:100] + ("..." if len(message.content) > 100 else "")
+                logger.debug(
+                    "send_public_message_notification: user=%s fcm_tokens=%d",
+                    user.id,
+                    len(fcm_rows),
+                )
 
                 if fcm_rows and self.firebase_initialized:
                     for fcm in fcm_rows:
                         try:
-                            self._send_fcm_to_token(fcm.token, title, body, payload_data)
+                            response = self._send_fcm_to_token(
+                                fcm.token,
+                                title,
+                                body,
+                                payload_data,
+                            )
+                            logger.info(
+                                "FCM public push sent user=%s token=%s response=%s",
+                                user.id,
+                                self._short_token(fcm.token),
+                                response,
+                            )
                         except Exception as e:
-                            logger.error(f"Failed to send FCM to user {user.id} token {fcm.token}: {e}")
+                            logger.error(
+                                "Failed to send FCM to user %s token %s: %s",
+                                user.id,
+                                self._short_token(fcm.token),
+                                e,
+                            )
                             # Check if this is a permanent failure and clean up the token
                             self._cleanup_failed_fcm_token(db, fcm, str(e))
+                if fcm_rows and not self.firebase_initialized:
+                    logger.warning(
+                        "Firebase SDK not initialized, skipped FCM pushes for message %s",
+                        message.id,
+                    )
 
                 subscription = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).first()
                 if subscription:
@@ -125,6 +175,12 @@ class PushNotificationService:
 
     async def send_dm_notification(self, db: Session, dm_envelope: DMEnvelope, sender: User):
         """Send push notification for a new DM"""
+        logger.info(
+            "send_dm_notification start: dm_id=%s sender_id=%s recipient=%s",
+            dm_envelope.id,
+            sender.id,
+            dm_envelope.recipient_id,
+        )
         try:
             title = f"{sender.username}"
             body = "New direct message"
@@ -136,14 +192,40 @@ class PushNotificationService:
             }
 
             fcm_rows = db.query(FcmToken).filter(FcmToken.user_id == dm_envelope.recipient_id).all()
+            logger.debug(
+                "send_dm_notification: recipient=%s fcm_tokens=%d",
+                dm_envelope.recipient_id,
+                len(fcm_rows),
+            )
             if fcm_rows and self.firebase_initialized:
                 for fcm in fcm_rows:
                     try:
-                        self._send_fcm_to_token(fcm.token, title, body, payload_data)
+                        response = self._send_fcm_to_token(
+                            fcm.token,
+                            title,
+                            body,
+                            payload_data,
+                        )
+                        logger.info(
+                            "FCM dm push sent recipient=%s token=%s response=%s",
+                            dm_envelope.recipient_id,
+                            self._short_token(fcm.token),
+                            response,
+                        )
                     except Exception as e:
-                        logger.error(f"Failed to send FCM to user {dm_envelope.recipient_id} token {fcm.token}: {e}")
+                        logger.error(
+                            "Failed to send FCM to user %s token %s: %s",
+                            dm_envelope.recipient_id,
+                            self._short_token(fcm.token),
+                            e,
+                        )
                         # Check if this is a permanent failure and clean up the token
                         self._cleanup_failed_fcm_token(db, fcm, str(e))
+                if fcm_rows and not self.firebase_initialized:
+                    logger.warning(
+                        "Firebase SDK not initialized, skipped FCM DM push for dm %s",
+                        dm_envelope.id,
+                    )
 
             await self._send_notification_to_user(
                 db, dm_envelope.recipient_id, title, body, sender.profile_picture, payload_data
@@ -155,6 +237,8 @@ class PushNotificationService:
         """Send a push notification to a specific user"""
         try:
             subscription = db.query(PushSubscription).filter(PushSubscription.user_id == user_id).first()
+            if not subscription:
+                logger.debug("No web push subscription for user %s", user_id)
             if not subscription:
                 return
 
@@ -180,6 +264,7 @@ class PushNotificationService:
                 vapid_private_key=self.vapid_private_key,
                 vapid_claims=self.vapid_claims
             )
+            logger.info("WebPush sent to user=%s", user_id)
             
         except WebPushException as e:
             logger.error(f"WebPush error for user {user_id}: {e}")
@@ -210,9 +295,10 @@ class PushNotificationService:
                 apns=firebase_messaging.APNSConfig(headers={"apns-priority": "10"})
             )
             resp = firebase_messaging.send(msg)
+            logger.debug("Firebase message queued token=%s", self._short_token(token))
             return resp
         except Exception as e:
-            logger.error(f"Firebase Admin send failed for token {token}: {e}")
+            logger.error("Firebase Admin send failed for token %s: %s", self._short_token(token), e)
             raise
 
     def _cleanup_failed_fcm_token(self, db: Session, fcm_token_entry, error_message: str):
@@ -228,13 +314,25 @@ class PushNotificationService:
             is_permanent = any(permanent_error in error_lower for permanent_error in permanent_errors)
 
             if is_permanent:
-                logger.info(f"Removing permanently failed FCM token for user {fcm_token_entry.user_id}: {fcm_token_entry.token}")
+                logger.info(
+                    "Removing permanently failed FCM token for user %s: %s",
+                    fcm_token_entry.user_id,
+                    self._short_token(fcm_token_entry.token),
+                )
                 db.query(FcmToken).filter(FcmToken.id == fcm_token_entry.id).delete()
                 db.commit()
             else:
-                logger.debug(f"Temporary FCM failure for token {fcm_token_entry.token}, keeping token: {error_message}")
+                logger.debug(
+                    "Temporary FCM failure for token %s, keeping token: %s",
+                    self._short_token(fcm_token_entry.token),
+                    error_message,
+                )
         except Exception as e:
-            logger.error(f"Failed to cleanup FCM token {fcm_token_entry.token}: {e}")
+            logger.error(
+                "Failed to cleanup FCM token for user %s: %s",
+                fcm_token_entry.user_id,
+                e,
+            )
             try:
                 db.rollback()
             except Exception:

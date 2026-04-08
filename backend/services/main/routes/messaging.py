@@ -419,6 +419,12 @@ async def _send_message_internal(
 
     # Send push notifications for public messages
     try:
+        logger.info(
+            "Public message saved: id=%s user=%s content_length=%s",
+            new_message.id,
+            current_user.id,
+            len(new_message.content or ""),
+        )
         await push_service.send_public_message_notification(db, new_message, exclude_user_id=current_user.id)
     except Exception as e:
         logger.error(f"Failed to send push notification for message {new_message.id}: {e}")
@@ -504,7 +510,11 @@ async def register_fcm_token(request: Request, body: RegisterFcmRequest, current
             new = FcmToken(user_id=current_user.id, token=token)
             db.add(new)
         db.commit()
-        logger.info(f"Registered FCM token for user {current_user.id}: {token}")
+        logger.info(
+            "Registered FCM token for user %s: ...%s",
+            current_user.id,
+            token[-8:],
+        )
     except Exception as e:
         try:
             db.rollback()
@@ -521,9 +531,15 @@ async def unregister_fcm_token(request: Request, body: RegisterFcmRequest | None
     Unregister an FCM token. If `body.token` provided, remove only that token for the user.
     If no token provided, remove all tokens for the user.
     """
+    token = body.token.strip() if body and body.token else None
+    logger.info(
+        "Unregister FCM request user=%s token=%s",
+        current_user.id,
+        f"...{token[-8:]}" if token else "ALL",
+    )
     try:
-        if body and body.token:
-            db.query(FcmToken).filter(FcmToken.user_id == current_user.id, FcmToken.token == body.token.strip()).delete()
+        if token:
+            db.query(FcmToken).filter(FcmToken.user_id == current_user.id, FcmToken.token == token).delete()
         else:
             db.query(FcmToken).filter(FcmToken.user_id == current_user.id).delete()
         db.commit()
@@ -546,6 +562,11 @@ async def push_test(request: Request, current_user: User = Depends(get_current_u
         fcm_rows = db.query(FcmToken).filter(FcmToken.user_id == current_user.id).all()
         if not fcm_rows:
             raise HTTPException(status_code=404, detail="No FCM token registered for user")
+        logger.info(
+            "push_test start: user=%s token_count=%s",
+            current_user.id,
+            len(fcm_rows),
+        )
 
         title = "FromChat test"
         body = "This is a test push from the server"
@@ -555,9 +576,20 @@ async def push_test(request: Request, current_user: User = Depends(get_current_u
         failures = []
         for fcm in fcm_rows:
             try:
-                push_service._send_fcm_to_token(fcm.token, title, body, data)
+                response = push_service._send_fcm_to_token(fcm.token, title, body, data)
+                logger.info(
+                    "push_test sent user=%s token=%s response=%s",
+                    current_user.id,
+                    f"{fcm.token[-8:]}",
+                    response,
+                )
             except Exception as e:
-                logger.error(f"Failed to send test push to user {current_user.id} token {fcm.token}: {e}")
+                logger.error(
+                    "Failed to send test push to user %s token %s: %s",
+                    current_user.id,
+                    f"...{fcm.token[-8:]}",
+                    e,
+                )
                 failures.append(str(e))
 
         if failures and len(failures) == len(fcm_rows):
