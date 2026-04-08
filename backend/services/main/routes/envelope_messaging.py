@@ -38,6 +38,7 @@ from ..service_calls import (
     delete_resumable_upload_in_storage,
 )
 from .messaging import messagingManager, convert_dm_envelope
+from ..push_service import push_service
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -366,6 +367,11 @@ async def send_encrypted_message(
         if request.client_message_id:
             sender_payload["client_message_id"] = request.client_message_id
         await messagingManager.send_update_to_user(dm_envelope.sender_id, "dmNew", sender_payload, db)
+
+        try:
+            await push_service.send_dm_notification(db, dm_envelope, current_user)
+        except Exception as e:
+            logger.error("Failed to send push notification for DM %s: %s", dm_envelope.id, e)
 
         return {
             "id": dm_envelope.id,

@@ -284,6 +284,7 @@ def convert_dm_envelope(db: Session, envelope: DMEnvelope, user_id: int | None =
         "id": envelope.id,
         "senderId": envelope.sender_id,
         "recipientId": envelope.recipient_id,
+        "sender_username": sender.username if sender else f"user_{envelope.sender_id}",
         "iv_b64": envelope.iv_b64,
         "ciphertext_b64": envelope.ciphertext_b64,
         "wrapped_mek_b64": wrapped_mek_b64,

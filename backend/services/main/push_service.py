@@ -205,6 +205,7 @@ class PushNotificationService:
                             title,
                             body,
                             payload_data,
+                            include_notification=False,
                         )
                         logger.info(
                             "FCM dm push sent recipient=%s token=%s response=%s",
@@ -275,25 +276,44 @@ class PushNotificationService:
         except Exception as e:
             logger.error(f"Failed to send push notification to user {user_id}: {e}")
 
-    def _send_fcm_to_token(self, token: str, title: str, body: str, data: dict):
-        """Send an FCM data-only push to a single device token using Firebase Admin SDK.
-        Notification display is handled by the app, not FCM."""
+    def _send_fcm_to_token(self, token: str, title: str, body: str, data: dict, include_notification: bool = True):
+        """Send an FCM push to a single device token using Firebase Admin SDK.
+
+        By default this sends both notification + data payloads, but callers can disable
+        the notification payload for custom client-side rendering.
+        """
         if not self.firebase_initialized:
             raise RuntimeError("Firebase Admin SDK not initialized")
 
         try:
-            # Send only data payload - let the app handle notification display
-            # This prevents FCM from auto-showing notifications
-            msg = firebase_messaging.Message(
-                token=token,
-                data={
-                    "title": title,
-                    "body": body,
-                    **{k: str(v) for k, v in (data or {}).items()}
-                },
-                android=firebase_messaging.AndroidConfig(priority="high"),
-                apns=firebase_messaging.APNSConfig(headers={"apns-priority": "10"})
-            )
+            payload = {
+                "title": title,
+                "body": body,
+                **{k: str(v) for k, v in (data or {}).items()}
+            }
+
+            if include_notification:
+                # Send notification + data payload:
+                # notification ensures visibility in system tray when app is background,
+                # data keeps app-level handling usable when app is foreground.
+                msg = firebase_messaging.Message(
+                    token=token,
+                    notification=firebase_messaging.Notification(
+                        title=title,
+                        body=body,
+                    ),
+                    data=payload,
+                    android=firebase_messaging.AndroidConfig(priority="high"),
+                    apns=firebase_messaging.APNSConfig(headers={"apns-priority": "10"})
+                )
+            else:
+                # Data-only push for custom client-side rendering.
+                msg = firebase_messaging.Message(
+                    token=token,
+                    data=payload,
+                    android=firebase_messaging.AndroidConfig(priority="high"),
+                    apns=firebase_messaging.APNSConfig(headers={"apns-priority": "10"})
+                )
             resp = firebase_messaging.send(msg)
             logger.debug("Firebase message queued token=%s", self._short_token(token))
             return resp
