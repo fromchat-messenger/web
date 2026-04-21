@@ -9,7 +9,7 @@ from user_agents import parse as parse_ua
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..constants import OWNER_USERNAME
-from ..dependencies import get_current_user, get_db
+from ..dependencies import get_current_user, get_current_user_allow_suspended, get_db
 from ..models import LoginRequest, RegisterRequest, ChangePasswordRequest, User, CryptoPublicKey, CryptoBackup, DeviceSession
 from ..utils import create_token, get_password_hash, verify_password, get_client_ip
 from ..validation import is_valid_password, is_valid_username, is_valid_display_name
@@ -18,6 +18,7 @@ import os
 from ..security.audit import log_security
 from ..security.profanity import contains_profanity
 from ..security.rate_limit import rate_limit_per_ip
+from ..key_lifecycle import destroy_message_keys_for_user
 router = APIRouter()
 
 _FAILED_ATTEMPT_WINDOW_SECONDS = 300
@@ -314,13 +315,13 @@ def register(
     }
 
 @router.get("/crypto/public-key")
-def get_public_key(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_public_key(current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     row = db.query(CryptoPublicKey).filter(CryptoPublicKey.user_id == current_user.id).first()
     return {"publicKey": row.public_key_b64 if row else None}
 
 
 @router.post("/crypto/public-key")
-def set_public_key(payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def set_public_key(payload: dict, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     pk = payload.get("publicKey")
     if not pk:
         raise HTTPException(status_code=400, detail="publicKey required")
@@ -337,13 +338,13 @@ def set_public_key(payload: dict, current_user: User = Depends(get_current_user)
 
 
 @router.get("/crypto/backup")
-def get_backup(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_backup(current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     row = db.query(CryptoBackup).filter(CryptoBackup.user_id == current_user.id).first()
     return {"blob": row.blob_json if row else None}
 
 
 @router.post("/crypto/backup")
-def set_backup(payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def set_backup(payload: dict, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     blob = payload.get("blob")
     if not blob:
         raise HTTPException(status_code=400, detail="blob required")
@@ -475,7 +476,7 @@ def change_password(
 
 @router.get("/users")
 @rate_limit_per_ip("30/minute")  # Per-IP limit to prevent abuse
-def list_users(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_users(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     users = db.query(User).order_by(User.username.asc()).all()
     return {
         "users": [
@@ -486,14 +487,19 @@ def list_users(request: Request, current_user: User = Depends(get_current_user),
 
 @router.get("/crypto/public-key/of/{user_id}")
 @rate_limit_per_ip("100/minute")  # Per-IP limit to prevent abuse
-def get_public_key_of(request: Request, user_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_public_key_of(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(get_current_user_allow_suspended),
+    db: Session = Depends(get_db),
+):
     row = db.query(CryptoPublicKey).filter(CryptoPublicKey.user_id == user_id).first()
     return {"publicKey": row.public_key_b64 if row else None}
 
 
 @router.get("/users/search")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
-def search_users(request: Request, q: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def search_users(request: Request, q: str, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     if len(q.strip()) < 2:
         return {"users": []}
     
@@ -554,6 +560,8 @@ async def _delete_user_data(user: User, db: Session):
             if has_user_id:
                 # Delete all records for this user
                 db.execute(text(f"DELETE FROM {table_name} WHERE user_id = :uid"), {"uid": user_id})
+
+        destroy_message_keys_for_user(db, user_id, commit=False)
         
         db.commit()
     except Exception as e:

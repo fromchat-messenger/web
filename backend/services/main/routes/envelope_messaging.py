@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from ..db import get_db
 from ..models import User, DMEnvelope, DMFile, DMEditHistory, EditMessageRequest
-from ..dependencies import get_current_user
+from ..dependencies import get_current_user, get_current_user_allow_suspended
 from ..security.audit import log_security
 from ..service_calls import (
     get_messaging_transport_public_key,
@@ -538,7 +538,7 @@ async def get_encrypted_conversation(
     other_user_id: int,
     limit: int = 50,
     offset: int = 0,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_suspended),
     db: Session = Depends(get_db),
 ):
     """

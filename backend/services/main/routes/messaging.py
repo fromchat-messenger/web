@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Request, status
 from sqlalchemy.orm import Session
-from ..dependencies import get_current_user, get_db
+from ..dependencies import get_current_user, get_current_user_allow_suspended, get_db
 from .account import convert_user
 from ..constants import OWNER_USERNAME
 from ..models import Message, SendMessageRequest, EditMessageRequest, User, DMEnvelope, MessageFile, DMFile, Reaction, ReactionRequest, ReactionResponse, DMReaction, DMReactionRequest, DMReactionResponse, UpdateLog, MessageEditHistory, MessageEditHistoryResponse
@@ -607,7 +607,7 @@ async def push_test(request: Request, current_user: User = Depends(get_current_u
 
 @router.get("/get_messages")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
-async def get_messages(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_messages(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     messages = db.query(Message).order_by(Message.timestamp.asc()).all()
 
     messages_data = []
@@ -626,7 +626,7 @@ class MarkReadRequest(BaseModel):
 
 @router.get("/messages/new")
 @rate_limit_per_ip("60/minute")
-async def get_new_messages(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_new_messages(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     """
     Return unread public messages (Message.is_read == False).
     """
@@ -661,7 +661,7 @@ async def mark_messages_read(request: Request, read_request: MarkReadRequest, cu
 
 @router.get("/dm/fetch")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
-async def dm_fetch(request: Request, since: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def dm_fetch(request: Request, since: int | None = None, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     envelopes = db.query(DMEnvelope).filter(DMEnvelope.recipient_id == current_user.id)
     if since:
         envelopes = envelopes.filter(DMEnvelope.id > since)
@@ -675,7 +675,7 @@ async def dm_fetch(request: Request, since: int | None = None, current_user: Use
 
 @router.get("/dm/history/{other_user_id}")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
-async def dm_history(request: Request, other_user_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def dm_history(request: Request, other_user_id: int, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     if other_user_id <= 0:
         raise HTTPException(status_code=400, detail="Invalid user ID")
     
@@ -684,7 +684,7 @@ async def dm_history(request: Request, other_user_id: int, current_user: User = 
     
     # Verify other user exists
     other_user = db.query(User).filter(User.id == other_user_id).first()
-    if not other_user or other_user.deleted or other_user.suspended:
+    if not other_user:
         raise HTTPException(status_code=404, detail="User not found")
     
     envelopes = db.query(DMEnvelope).filter(
@@ -700,7 +700,7 @@ async def dm_history(request: Request, other_user_id: int, current_user: User = 
 
 @router.get("/dm/conversations")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
-async def get_dm_conversations(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_dm_conversations(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     # Get all DM conversations where current user is involved
     conversations_query = db.query(DMEnvelope).filter(
         (DMEnvelope.sender_id == current_user.id) | (DMEnvelope.recipient_id == current_user.id)
@@ -1361,6 +1361,10 @@ class MessaggingSocketManager:
             "reason": reason
         })
 
+    async def send_unsuspension_to_user(self, user_id: int):
+        """Send unsuspension message to user's WebSocket connections (as batched update)"""
+        await self.send_update_to_user(user_id, "unsuspended", {})
+
     async def send_deletion_to_user(self, user_id: int):
         """Send account deletion message to user's WebSocket connections (as batched update)"""
         await self.send_update_to_user(user_id, "account_deleted", {})
@@ -1478,7 +1482,7 @@ import httpx
 async def proxy_normal_file(
     request: Request,
     filename: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_allow_suspended)
 ):
     """Proxy file requests to file_storage service."""
     mod = service_calls._get_file_storage_module()
@@ -1531,7 +1535,7 @@ async def test_proxy():
 async def proxy_encrypted_file(
     request: Request,
     filename: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_allow_suspended)
 ):
     """Proxy file requests to file_storage service."""
     mod = service_calls._get_file_storage_module()

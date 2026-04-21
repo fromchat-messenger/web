@@ -18,11 +18,12 @@ def get_db():
     finally:
         db.close()
 
-# Зависимость для получения текущего пользователя
-def get_current_user(
+# Internal dependency helper to reuse auth/session resolution
+def _get_current_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials,
+    db: Session,
+    allow_suspended: bool = False,
 ) -> User:
     token = credentials.credentials
     try:
@@ -98,7 +99,7 @@ def get_current_user(
     db.commit()
 
     # Check if user is suspended
-    if user.suspended:
+    if user.suspended and not allow_suspended:
         logger.info("get_current_user: account suspended for user_id=%s reason=%s", user.id, user.suspension_reason)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -118,3 +119,21 @@ def get_current_user(
     request.state.session_id = session_id
 
     return user
+
+
+# Dependency for all standard routes: suspended users are blocked
+def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    return _get_current_user(request, credentials, db, allow_suspended=False)
+
+
+# Dependency for read/crypto endpoints that remain accessible for suspended users
+def get_current_user_allow_suspended(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    return _get_current_user(request, credentials, db, allow_suspended=True)

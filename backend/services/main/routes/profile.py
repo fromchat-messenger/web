@@ -9,7 +9,7 @@ import uuid
 import io
 from fastapi import Request
 
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_current_user, get_current_user_allow_suspended, get_db
 from ..models import User, UpdateBioRequest, UserProfileResponse
 from pydantic import BaseModel
 from ..validation import is_valid_username, is_valid_display_name
@@ -20,6 +20,40 @@ from ..security.profanity import contains_profanity
 from ..security.rate_limit import rate_limit_per_ip
 
 router = APIRouter()
+
+
+def _build_user_profile_response(user: User, is_owner_request: bool = False) -> UserProfileResponse:
+    should_hide_profile = (not is_owner_request) and (user.deleted or user.suspended)
+    if not should_hide_profile:
+        return UserProfileResponse(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            profile_picture=user.profile_picture,
+            bio=user.bio,
+            online=user.online,
+            last_seen=user.last_seen,
+            created_at=user.created_at,
+            verified=user.verified,
+            suspended=user.suspended or False,
+            suspension_reason=user.suspension_reason,
+            deleted=user.deleted or False,
+        )
+
+    return UserProfileResponse(
+        id=user.id,
+        username="deleted",
+        display_name="Deleted User",
+        profile_picture=None,
+        bio=None,
+        online=False,
+        last_seen=None,
+        created_at=None,
+        verified=False,
+        suspended=False,
+        suspension_reason=None,
+        deleted=True,
+    )
 
 
 def _ensure_owner_unsuspended(user: User | None, db: Session):
@@ -111,7 +145,7 @@ async def get_profile_picture(filename: str):
 
 @router.get("/user/profile")
 async def get_user_profile(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_suspended),
     db: Session = Depends(get_db)
 ):
     """
@@ -132,7 +166,7 @@ async def get_user_profile(
             verified=current_user.verified,
             suspended=current_user.suspended or False,
             suspension_reason=current_user.suspension_reason,
-            deleted=(current_user.deleted or current_user.suspended) or False,  # Treat suspended as deleted
+            deleted=current_user.deleted or False,
         )
     except Exception as e:
         # Log and return a consistent HTTP 500 error with minimal details
@@ -278,7 +312,7 @@ async def update_user_bio(
 
 @router.get("/user/stats/registered-count")
 def get_registered_user_count(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_suspended),
     db: Session = Depends(get_db),
 ):
     """Number of registered accounts (non-deleted users)."""
@@ -289,6 +323,7 @@ def get_registered_user_count(
 @router.get("/user/{username}")
 async def get_user_by_username(
     username: str,
+    current_user: User = Depends(get_current_user_allow_suspended),
     db: Session = Depends(get_db)
 ):
     """
@@ -304,41 +339,13 @@ async def get_user_by_username(
 
     _ensure_owner_unsuspended(user, db)
     
-    # Handle deleted or suspended users
-    if user.deleted or user.suspended:
-        return UserProfileResponse(
-            id=user.id,
-            username="deleted",
-            display_name="Deleted User",
-            profile_picture=None,
-            bio=None,
-            online=False,
-            last_seen=None,  # Clear last seen timestamp
-            created_at=None,  # Clear member since timestamp
-            verified=False,
-            suspended=False,
-            suspension_reason=None,
-            deleted=True
-        )
-    
-    return UserProfileResponse(
-        id=user.id,
-        username=user.username,
-        display_name=user.display_name,
-        profile_picture=user.profile_picture,
-        bio=user.bio,
-        online=user.online,
-        last_seen=user.last_seen,
-        created_at=user.created_at,
-        verified=user.verified,
-        suspended=user.suspended or False,
-        suspension_reason=user.suspension_reason,
-        deleted=(user.deleted or user.suspended) or False,  # Treat suspended as deleted
-    )
+    is_owner_request = current_user.id == user.id or current_user.id == 1
+    return _build_user_profile_response(user, is_owner_request=is_owner_request)
 
 @router.get("/user/id/{user_id}")
 async def get_user_by_id(
     user_id: int,
+    current_user: User = Depends(get_current_user_allow_suspended),
     db: Session = Depends(get_db)
 ):
     """
@@ -354,37 +361,8 @@ async def get_user_by_id(
 
     _ensure_owner_unsuspended(user, db)
     
-    # Handle deleted or suspended users
-    if user.deleted or user.suspended:
-        return UserProfileResponse(
-            id=user.id,
-            username="deleted",
-            display_name="Deleted User",
-            profile_picture=None,
-            bio=None,
-            online=False,
-            last_seen=None,  # Clear last seen timestamp
-            created_at=None,  # Clear member since timestamp
-            verified=False,
-            suspended=False,
-            suspension_reason=None,
-            deleted=True
-        )
-    
-    return UserProfileResponse(
-        id=user.id,
-        username=user.username,
-        display_name=user.display_name,
-        profile_picture=user.profile_picture,
-        bio=user.bio,
-        online=user.online,
-        last_seen=user.last_seen,
-        created_at=user.created_at,
-        verified=user.verified,
-        suspended=user.suspended or False,
-        suspension_reason=user.suspension_reason,
-        deleted=user.deleted or False
-    )
+    is_owner_request = current_user.id == user.id or current_user.id == 1
+    return _build_user_profile_response(user, is_owner_request=is_owner_request)
 
 
 @router.post("/user/{user_id}/verify")
@@ -426,7 +404,7 @@ async def verify_user(
 @router.get("/user/check-similarity/{user_id}")
 async def check_user_similarity(
     user_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_suspended),
     db: Session = Depends(get_db)
 ):
     """
@@ -531,6 +509,13 @@ async def unsuspend_user(
     target_user.suspended = False
     target_user.suspension_reason = None
     db.commit()
+
+    # Send WebSocket unsuspension message
+    try:
+        await messagingManager.send_unsuspension_to_user(user_id)
+    except Exception:
+        # Log error but don't fail the request
+        pass
     
     log_security(
         "admin_unsuspend_user",
