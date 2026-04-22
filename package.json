@@ -9,6 +9,8 @@
     "authors": "denis0001-dev",
     "scripts": {
         "backend:run": "bash ./scripts/backend:run.sh",
+        "livekit:ensure": "bash ./scripts/livekit:ensure.sh",
+        "livekit:run": "bash ./scripts/livekit:run.sh",
         "backend:dependencies": "python3 -m venv .venv && ./.venv/bin/pip3 install -r backend/requirements.txt",
         "backend:reinstall": "rm -rf .venv && npm run backend:dependencies",
         "backend:clean": "rm -rf backend/data",

@@ -1,0 +1,12 @@
+# Local LiveKit SFU for FromChat development.
+# Match keys in deployment/.env — see deployment/livekit.local.env.example
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: false
+
+keys:
+  fromchat_dev: "local_dev_secret_must_be_at_least_32_characters_long"

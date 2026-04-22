@@ -4,8 +4,11 @@ import { resolve } from 'path';
 
 const app = express();
 const port = process.env.PORT || 3000;
-const backendHost = process.env.BACKEND_HOST || "http://localhost:8300";
-const fileStorageHost = process.env.FILE_STORAGE_HOST || "http://localhost:8302";
+const lan = process.env.LAN_IP;
+const backendHost =
+    process.env.BACKEND_HOST || (lan ? `http://${lan}:8300` : "http://localhost:8300");
+const fileStorageHost =
+    process.env.FILE_STORAGE_HOST || (lan ? `http://${lan}:8302` : "http://localhost:8302");
 const filePath = process.env.STATIC_FILE_PATH || ".";
 
 // API proxy middleware

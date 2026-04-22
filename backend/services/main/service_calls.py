@@ -18,6 +18,13 @@ from fastapi import HTTPException, status
 logger = logging.getLogger("uvicorn.error")
 
 
+def _default_file_storage_base_url() -> str:
+    lan = os.getenv("LAN_IP", "").strip()
+    if lan:
+        return f"http://{lan}:8302"
+    return "http://127.0.0.1:8302"
+
+
 def _get_messaging_module():
     try:
         from backend.services.messaging import main as messaging_module
@@ -151,7 +158,7 @@ async def upload_file_to_storage(file_obj: Any, timeout: float = 30.0) -> Dict[s
 
     # Out-of-process HTTP
     # Prefer explicit FILE_STORAGE_URL, fall back to FILE_STORAGE_SERVICE_URL, default to localhost for dev
-    storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{storage_url.rstrip('/')}/upload"
     try:
         try:
@@ -219,7 +226,7 @@ async def store_encrypted_file(
 
     # Out-of-process HTTP
     # Prefer explicit FILE_STORAGE_URL, fall back to FILE_STORAGE_SERVICE_URL, default to localhost for dev
-    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{file_storage_url.rstrip('/')}/upload-base64"
     try:
         try:
@@ -463,7 +470,7 @@ async def init_resumable_upload_in_storage(
             logger.error("In-process file_storage.init_resumable_upload failed: %s", e)
             raise
 
-    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{file_storage_url.rstrip('/')}/uploads/resumable/init"
     payload = {
         "filename": filename,
@@ -493,7 +500,7 @@ async def get_resumable_upload_status_in_storage(
             logger.error("In-process file_storage.get_resumable_upload_status failed: %s", e)
             raise
 
-    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}"
 
     import httpx
@@ -520,7 +527,7 @@ async def upload_resumable_chunk_in_storage(
             logger.error("In-process file_storage.upload_resumable_chunk failed: %s", e)
             raise
 
-    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}"
     payload = {
         "offset": offset,
@@ -547,7 +554,7 @@ async def complete_resumable_upload_in_storage(
             logger.error("In-process file_storage.complete_resumable_upload failed: %s", e)
             raise
 
-    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}/complete"
 
     import httpx
@@ -570,7 +577,7 @@ async def get_resumable_upload_data_in_storage(
             logger.error("In-process file_storage.get_resumable_upload_data failed: %s", e)
             raise
 
-    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}/data-b64"
 
     import httpx
@@ -593,7 +600,7 @@ async def delete_resumable_upload_in_storage(
             logger.error("In-process file_storage.delete_resumable_upload failed: %s", e)
             raise
 
-    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or "http://127.0.0.1:8302"
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
     url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}"
 
     import httpx

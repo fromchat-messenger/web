@@ -66,6 +66,9 @@ if (process.env.VITE_ELECTRON) {
     );
 }
 
+const _lan = process.env.LAN_IP;
+const _backendProxy = _lan ? `http://${_lan}:8300/` : "http://127.0.0.1:8300/";
+
 export default defineConfig({
     plugins: plugins,
     resolve: {
@@ -80,13 +83,16 @@ export default defineConfig({
         strictPort: true,
         proxy: {
             "/api": {
-                target: "http://127.0.0.1:8300/",
+                target: _backendProxy,
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api/, ""),
                 ws: true
             }
         },
-        allowedHosts: ["beta.fromchat.ru"]
+        allowedHosts: [
+            "beta.fromchat.ru",
+            ...(_lan ? [_lan] : []),
+        ]
     },
     appType: "spa",
     optimizeDeps: {

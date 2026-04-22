@@ -35,6 +35,9 @@ Temporary Items
 # iCloud generated files
 *.icloud
 
+### FromChat local tools (downloaded LiveKit server binary) ###
+.tools/
+
 ### Node ###
 # Logs
 logs

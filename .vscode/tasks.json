@@ -38,6 +38,24 @@
             "isBackground": true
         },
         {
+            "label": "LiveKit",
+            "type": "npm",
+            "script": "livekit:run",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "group": {
+                "kind": "build"
+            },
+            "isBackground": true
+        },
+        {
             "label": "Frontend (Electron)",
             "type": "npm",
             "script": "frontend:electron:dev",
@@ -58,7 +76,7 @@
 
         {
             "label": "Web",
-            "dependsOn": ["Backend", "Frontend (Web)"],
+            "dependsOn": ["LiveKit", "Backend", "Frontend (Web)"],
             "dependsOrder": "parallel",
             "group": {
                 "kind": "build",
@@ -76,7 +94,7 @@
         },
         {
             "label": "Electron",
-            "dependsOn": ["Backend", "Frontend (Electron)"],
+            "dependsOn": ["LiveKit", "Backend", "Frontend (Electron)"],
             "dependsOrder": "parallel",
             "group": {
                 "kind": "build"

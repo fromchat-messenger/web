@@ -10,7 +10,7 @@ import logging
 from sqlalchemy.orm.exc import DetachedInstanceError
 
 # Import from same directory
-from .routes import account, messaging, profile, push, webrtc, devices, moderation, download, keys, envelope_messaging
+from .routes import account, messaging, profile, push, webrtc, devices, moderation, download, keys, envelope_messaging, livekit
 from .models import User
 from .constants import OWNER_USERNAME
 from .utils import get_client_ip
@@ -284,17 +284,27 @@ if add_security_middleware:
     add_security_middleware(app)
 
 # CORS
+_lan_ip = os.getenv("LAN_IP", "").strip()
+_cors_origins = [
+    "https://fromchat.ru",
+    "https://beta.fromchat.ru",
+    "https://www.fromchat.ru",
+    "http://127.0.0.1:8301",
+    "http://127.0.0.1:8300",
+    "http://localhost:8301",
+    "http://localhost:8300",
+]
+if _lan_ip:
+    _cors_origins.extend(
+        [
+            f"http://{_lan_ip}:8301",
+            f"http://{_lan_ip}:8300",
+        ]
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://fromchat.ru",
-        "https://beta.fromchat.ru",
-        "https://www.fromchat.ru",
-        "http://127.0.0.1:8301",
-        "http://127.0.0.1:8300",
-        "http://localhost:8301",
-        "http://localhost:8300",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -307,6 +317,7 @@ app.include_router(messaging.router)
 app.include_router(profile.router)
 app.include_router(push.router, prefix="/push")
 app.include_router(webrtc.router, prefix="/webrtc")
+app.include_router(livekit.router, prefix="/livekit")
 app.include_router(devices.router, prefix="/devices")
 app.include_router(moderation.router)
 app.include_router(download.router)
