@@ -77,6 +77,7 @@ export default defineConfig({
             "@fromchat/protocol": path.resolve(__dirname, "./packages/fromchat-protocol/src/index.ts")
         }
     },
+    // Dev entry on 8301: browser uses same-origin `/api` (HTTP + WebSocket, e.g. `/api/chat/ws`).
     server: {
         host: '0.0.0.0',
         port: 8301,
@@ -86,7 +87,8 @@ export default defineConfig({
                 target: _backendProxy,
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api/, ""),
-                ws: true
+                ws: true,
+                proxyTimeout: 0,
             }
         },
         allowedHosts: [

@@ -1,6 +1,8 @@
 from datetime import datetime
 from collections import defaultdict, deque
+import logging
 import time
+from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, text
@@ -20,6 +22,38 @@ from ..security.profanity import contains_profanity
 from ..security.rate_limit import rate_limit_per_ip
 from ..key_lifecycle import destroy_message_keys_for_user
 router = APIRouter()
+_logger = logging.getLogger(__name__)
+
+_SERVER_INSTANCE_ID: str | None = None
+_INSTANCE_ID_FILE = Path(__file__).resolve().parent.parent / ".fromchat_instance_id"
+
+
+def get_server_instance_id() -> str:
+    """Stable server fingerprint; UUID generated once and persisted next to the main service package."""
+    global _SERVER_INSTANCE_ID
+    if _SERVER_INSTANCE_ID is not None:
+        return _SERVER_INSTANCE_ID
+    path = _INSTANCE_ID_FILE
+    try:
+        if path.is_file():
+            text = path.read_text(encoding="utf-8").strip()
+            if text:
+                _SERVER_INSTANCE_ID = text
+                return _SERVER_INSTANCE_ID
+    except OSError as exc:
+        _logger.warning("Could not read instance id from %s: %s", path, exc)
+    iid = str(uuid.uuid4())
+    try:
+        path.write_text(iid + "\n", encoding="utf-8")
+    except OSError as exc:
+        _logger.warning(
+            "Could not persist instance id to %s (%s); using in-process id only.",
+            path,
+            exc,
+        )
+    _SERVER_INSTANCE_ID = iid
+    return iid
+
 
 _FAILED_ATTEMPT_WINDOW_SECONDS = 300
 _FAILED_ATTEMPT_THRESHOLD = 5
@@ -70,6 +104,12 @@ def convert_user(user: User) -> dict:
         "suspension_reason": user.suspension_reason,
         "deleted": (user.deleted or user.suspended) or False  # Treat suspended as deleted
     }
+
+@router.get("/instance_id")
+def get_instance_id_public():
+    """Public deploy fingerprint (used when the client changes server host/port)."""
+    return {"instance_id": get_server_instance_id()}
+
 
 @router.get("/check_auth")
 def check_auth(current_user: User = Depends(get_current_user)):
