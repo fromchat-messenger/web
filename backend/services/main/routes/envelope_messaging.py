@@ -37,7 +37,7 @@ from ..service_calls import (
     get_resumable_upload_data_in_storage,
     delete_resumable_upload_in_storage,
 )
-from .messaging import messagingManager, convert_dm_envelope
+from .messaging import messagingManager, convert_dm_envelope, convert_dm_envelope_for_user
 from ..push_service import push_service
 
 logger = logging.getLogger("uvicorn.error")
@@ -360,12 +360,17 @@ async def send_encrypted_message(
         )
 
         # Send user-specific WebSocket updates (each user gets only their MEK and files metadata)
-        recipient_payload = convert_dm_envelope(db, dm_envelope, dm_envelope.recipient_id)
+        recipient_payload = convert_dm_envelope_for_user(
+            db, dm_envelope, dm_envelope.recipient_id,
+        )
         await messagingManager.send_update_to_user(dm_envelope.recipient_id, "dmNew", recipient_payload, db)
 
-        sender_payload = convert_dm_envelope(db, dm_envelope, dm_envelope.sender_id)
-        if request.client_message_id:
-            sender_payload["client_message_id"] = request.client_message_id
+        sender_payload = convert_dm_envelope_for_user(
+            db,
+            dm_envelope,
+            dm_envelope.sender_id,
+            sender_client_message_id=request.client_message_id,
+        )
         await messagingManager.send_update_to_user(dm_envelope.sender_id, "dmNew", sender_payload, db)
 
         try:

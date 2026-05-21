@@ -156,6 +156,12 @@ async def dmSend(manager: MessaggingSocketManager, websocket: WebSocket, db: Ses
         if key not in payload:
             raise HTTPException(status_code=400, detail=f"Missing {key}")
 
+    client_message_id = payload.get("client_message_id") or payload.get("clientMessageId")
+    if isinstance(client_message_id, str):
+        client_message_id = client_message_id.strip() or None
+    else:
+        client_message_id = None
+
     env = DMEnvelope(
         sender_id=user.id,
         recipient_id=int(payload["recipientId"]),
@@ -191,13 +197,16 @@ async def dmSend(manager: MessaggingSocketManager, websocket: WebSocket, db: Ses
     }
     await manager.send_update_to_user(env.recipient_id, "dmNew", recipient_payload["data"], db)
 
-    # Send to sender with their MEK
+    # Send to sender with their MEK (client_message_id only for optimistic ack matching)
+    sender_data = {
+        **base_payload,
+        "wrapped_mek_b64": env.sender_wrapped_mek_b64,
+    }
+    if client_message_id:
+        sender_data["client_message_id"] = client_message_id
     sender_payload = {
         "type": "dmNew",
-        "data": {
-            **base_payload,
-            "wrapped_mek_b64": env.sender_wrapped_mek_b64,
-        }
+        "data": sender_data,
     }
     await manager.send_update_to_user(env.sender_id, "dmNew", sender_payload["data"], db)
 

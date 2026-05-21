@@ -314,6 +314,27 @@ def convert_dm_envelope(db: Session, envelope: DMEnvelope, user_id: int | None =
     return result
 
 
+def convert_dm_envelope_for_user(
+    db: Session,
+    envelope: DMEnvelope,
+    user_id: int | None,
+    *,
+    sender_client_message_id: str | None = None,
+) -> dict:
+    """
+    Per-user DM payload. [sender_client_message_id] is included only for the sender so clients
+    can match optimistic rows to the server ack; never exposed to the recipient.
+    """
+    payload = convert_dm_envelope(db, envelope, user_id)
+    if (
+        sender_client_message_id
+        and user_id is not None
+        and user_id == envelope.sender_id
+    ):
+        payload["client_message_id"] = sender_client_message_id
+    return payload
+
+
 async def _send_message_internal(
     message_request: SendMessageRequest,
     current_user: User,

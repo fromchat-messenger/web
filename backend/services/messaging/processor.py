@@ -182,15 +182,14 @@ _THUMB_SIZE = 80
 def _generate_thumbnail(image_bytes: bytes) -> tuple[str | None, list[int]]:
     """Generate tiny JPEG thumbnail (Telegram-style). Returns (base64_jpeg, [w,h]) or (None, [1,1]) on error."""
     try:
-        from math import gcd
-        from PIL import Image
-        img = Image.open(io.BytesIO(image_bytes))
+        from PIL import Image, ImageOps
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes)))
         img = img.convert("RGB")
         if hasattr(img, "info") and img.info:
             img.info.pop("icc_profile", None)
         w, h = img.size
-        g = gcd(w, h) if h else 1
-        aspect_wh = [w // g, h // g] if g else [1, 1]
+        # Pixel dimensions after EXIF orientation (clients compute width/height from this).
+        aspect_wh = [w, h]
         if w > _THUMB_SIZE or h > _THUMB_SIZE:
             scale = min(_THUMB_SIZE / w, _THUMB_SIZE / h)
             new_w = max(1, int(w * scale))

@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, 
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, text
 import uuid
+import secrets
 from user_agents import parse as parse_ua
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -26,6 +27,16 @@ _logger = logging.getLogger(__name__)
 
 _SERVER_INSTANCE_ID: str | None = None
 _INSTANCE_ID_FILE = Path(__file__).resolve().parent.parent / ".fromchat_instance_id"
+
+
+def allocate_user_id(db: Session) -> int:
+    """First registered user gets id 1; subsequent users get random unique ids."""
+    if db.query(User).count() == 0:
+        return 1
+    while True:
+        candidate = secrets.randbelow(2_147_483_646) + 2
+        if db.query(User).filter(User.id == candidate).first() is None:
+            return candidate
 
 
 def get_server_instance_id() -> str:
@@ -289,6 +300,7 @@ def register(
     is_owner = not owner_exists and username == OWNER_USERNAME
     
     new_user = User(
+        id=allocate_user_id(db),
         username=username,
         display_name=display_name,
         password_hash=hashed_password,

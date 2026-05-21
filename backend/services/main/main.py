@@ -11,6 +11,7 @@ from sqlalchemy.orm.exc import DetachedInstanceError
 
 # Import from same directory
 from .routes import account, messaging, profile, push, webrtc, devices, moderation, download, keys, envelope_messaging, livekit
+from .routes.account import get_server_instance_id
 from .models import User
 from .constants import OWNER_USERNAME
 from .utils import get_client_ip
@@ -155,8 +156,17 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+INSTANCE_ID_HEADER = "X-FromChat-Instance-Id"
+
 # Initialize FastAPI
 app = FastAPI(title="FromChat", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def server_instance_id_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers[INSTANCE_ID_HEADER] = get_server_instance_id()
+    return response
 
 # Add rate limiting middleware
 app.state.limiter = limiter
@@ -308,6 +318,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*", INSTANCE_ID_HEADER],
 )
 
 # Routes
