@@ -34,7 +34,8 @@ from ..service_calls import (
     get_resumable_upload_status_in_storage,
     upload_resumable_chunk_in_storage,
     complete_resumable_upload_in_storage,
-    get_resumable_upload_data_in_storage,
+    get_resumable_upload_blob_path_in_storage,
+    store_encrypted_file_from_path,
     delete_resumable_upload_in_storage,
 )
 from .messaging import messagingManager, convert_dm_envelope, convert_dm_envelope_for_user
@@ -262,10 +263,12 @@ async def send_encrypted_message(
         ]
 
         for upload_id in request.uploaded_file_ids:
-            uploaded_payload = await get_resumable_upload_data_in_storage(upload_id, current_user.id)
+            uploaded_payload = await get_resumable_upload_blob_path_in_storage(
+                upload_id, current_user.id
+            )
             all_transport_files.append(
                 {
-                    "encrypted_file_data_b64": uploaded_payload["encrypted_file_data_b64"],
+                    "encrypted_file_path": uploaded_payload["encrypted_file_path"],
                     "filename": uploaded_payload["filename"],
                     "file_size": uploaded_payload["file_size"],
                     "upload_id": upload_id,
@@ -280,10 +283,17 @@ async def send_encrypted_message(
             sender_public_key_b64=request.sender_public_key_b64,
             recipient_public_key_b64=request.recipient_public_key_b64,
             transport_files=[
-                {
-                    "encrypted_file_data_b64": str(f["encrypted_file_data_b64"]),
-                    "filename": str(f.get("filename", "file")),
-                }
+                (
+                    {
+                        "encrypted_file_path": str(f["encrypted_file_path"]),
+                        "filename": str(f.get("filename", "file")),
+                    }
+                    if f.get("encrypted_file_path")
+                    else {
+                        "encrypted_file_data_b64": str(f["encrypted_file_data_b64"]),
+                        "filename": str(f.get("filename", "file")),
+                    }
+                )
                 for f in all_transport_files
             ],
         )
@@ -319,13 +329,27 @@ async def send_encrypted_message(
 
             for i, tf in enumerate(all_transport_files):
                 fr = file_results[i]
-                file_storage_result = await store_encrypted_file(
-                    encrypted_file_data_b64=fr["ciphertext"],
-                    filename=str(tf["filename"]),
-                    content_type="application/octet-stream",
-                    sender_id=current_user.id,
-                    recipient_id=request.recipient_id,
-                )
+                ciphertext_path = fr.get("ciphertext_path")
+                if ciphertext_path:
+                    file_storage_result = await store_encrypted_file_from_path(
+                        source_path=str(ciphertext_path),
+                        filename=str(tf["filename"]),
+                        content_type="application/octet-stream",
+                        sender_id=current_user.id,
+                        recipient_id=request.recipient_id,
+                    )
+                    try:
+                        Path(ciphertext_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                else:
+                    file_storage_result = await store_encrypted_file(
+                        encrypted_file_data_b64=fr["ciphertext"],
+                        filename=str(tf["filename"]),
+                        content_type="application/octet-stream",
+                        sender_id=current_user.id,
+                        recipient_id=request.recipient_id,
+                    )
 
                 df = DMFile(
                     message_id=dm_envelope.id,

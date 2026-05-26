@@ -564,6 +564,57 @@ async def complete_resumable_upload_in_storage(
         return r.json()
 
 
+async def get_resumable_upload_blob_path_in_storage(
+    upload_id: str,
+    user_id: int,
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.get_resumable_upload_blob_path_internal(upload_id, user_id)
+        except Exception as e:
+            logger.error("In-process file_storage.get_resumable_upload_blob_path failed: %s", e)
+            raise
+
+    file_storage_url = os.getenv("FILE_STORAGE_URL") or os.getenv("FILE_STORAGE_SERVICE_URL") or _default_file_storage_base_url()
+    url = f"{file_storage_url.rstrip('/')}/uploads/resumable/{upload_id}/blob-path"
+
+    import httpx
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.get(url, headers={"X-User-ID": str(user_id)})
+        r.raise_for_status()
+        return r.json()
+
+
+async def store_encrypted_file_from_path(
+    source_path: str,
+    filename: str,
+    content_type: str = "application/octet-stream",
+    sender_id: int = None,
+    recipient_id: int = None,
+    timeout: float = 120.0,
+) -> Dict[str, Any]:
+    mod = _get_file_storage_module()
+    allowed_user_ids: list[int] = []
+    if sender_id is not None:
+        allowed_user_ids.append(sender_id)
+    if recipient_id is not None:
+        allowed_user_ids.append(recipient_id)
+
+    if mod:
+        from pathlib import Path
+
+        return await mod.upload_encrypted_file_from_path_internal(
+            filename=filename,
+            source_path=Path(source_path),
+            content_type=content_type,
+            allowed_user_ids=allowed_user_ids,
+        )
+
+    raise RuntimeError("store_encrypted_file_from_path requires in-process file_storage")
+
+
 async def get_resumable_upload_data_in_storage(
     upload_id: str,
     user_id: int,

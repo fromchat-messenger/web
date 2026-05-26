@@ -11,6 +11,8 @@ Handles:
 import os
 import base64
 import logging
+from pathlib import Path
+from typing import BinaryIO
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -24,6 +26,13 @@ logger = logging.getLogger(__name__)
 TRANSPORT_NONCE_SIZE = 24  # For X25519 transport encryption (PyNaCl Box/XSalsa20Poly1305)
 MEK_NONCE_SIZE = 12        # For AES-GCM content encryption
 MEK_SIZE = 32              # Message Encryption Key size
+
+# Client streaming transport format (chunked AES-256-GCM): FCAE | version | frames…
+FCAE_MAGIC = b"FCAE"
+FCAE_VERSION = 1
+FCAE_PREFIX_BYTES = len(FCAE_MAGIC) + 1
+FCAE_FRAME_LENGTH_BYTES = 4
+TRANSPORT_FILE_KEY_CONTEXT = "fromchat_transport_file_v1"
 
 
 def generate_mek() -> bytes:
@@ -123,6 +132,106 @@ def decrypt_transport_message(
         raise
 
 
+def is_fcae_transport_blob(prefix: bytes) -> bool:
+    return len(prefix) >= len(FCAE_MAGIC) and prefix[: len(FCAE_MAGIC)] == FCAE_MAGIC
+
+
+def derive_transport_file_aes_key(
+    client_public_key_b64: str,
+    ephemeral_private_key: X25519PrivateKey,
+) -> bytes:
+    client_public_bytes = base64.b64decode(client_public_key_b64)
+    server_private_bytes = ephemeral_private_key.private_bytes_raw()
+    shared = sodium.crypto_box_beforenm(client_public_bytes, server_private_bytes)
+    return derive_key_from_shared_secret(shared, TRANSPORT_FILE_KEY_CONTEXT)
+
+
+def _read_fcae_frame_payload(source: BinaryIO) -> tuple[bytes, bytes] | None:
+    length_bytes = source.read(FCAE_FRAME_LENGTH_BYTES)
+    if not length_bytes:
+        return None
+    if len(length_bytes) < FCAE_FRAME_LENGTH_BYTES:
+        raise ValueError("Truncated FCAE frame length")
+    frame_len = int.from_bytes(length_bytes, byteorder="big", signed=False)
+    if frame_len <= MEK_NONCE_SIZE:
+        raise ValueError("Invalid FCAE frame length")
+    frame = source.read(frame_len)
+    if len(frame) < frame_len:
+        raise ValueError("Truncated FCAE frame")
+    iv = frame[:MEK_NONCE_SIZE]
+    ciphertext = frame[MEK_NONCE_SIZE:]
+    return iv, ciphertext
+
+
+def _decrypt_fcae_transport_stream_io(
+    client_public_key_b64: str,
+    source: BinaryIO,
+    ephemeral_private_key: X25519PrivateKey,
+) -> bytes:
+    prefix = source.read(FCAE_PREFIX_BYTES)
+    if len(prefix) < FCAE_PREFIX_BYTES:
+        raise ValueError("FCAE blob is too short")
+    if not is_fcae_transport_blob(prefix):
+        raise ValueError("Not an FCAE transport blob")
+    if prefix[4] != FCAE_VERSION:
+        raise ValueError("Unsupported FCAE version")
+    aes_key = derive_transport_file_aes_key(client_public_key_b64, ephemeral_private_key)
+    cipher = AESGCM(aes_key)
+    parts: list[bytes] = []
+    while True:
+        frame = _read_fcae_frame_payload(source)
+        if frame is None:
+            break
+        iv, ciphertext = frame
+        parts.append(cipher.decrypt(iv, ciphertext, None))
+    return b"".join(parts)
+
+
+def decrypt_fcae_transport_blob_to_file(
+    client_public_key_b64: str,
+    encrypted_path: Path,
+    ephemeral_private_key: X25519PrivateKey,
+    output_path: Path,
+) -> int:
+    """Stream-decrypt FCAE transport ciphertext from disk to a plaintext file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    total_out = 0
+    with open(encrypted_path, "rb") as enc, open(output_path, "wb") as out:
+        prefix = enc.read(FCAE_PREFIX_BYTES)
+        if not is_fcae_transport_blob(prefix):
+            raise ValueError("Not an FCAE transport blob")
+        if prefix[4] != FCAE_VERSION:
+            raise ValueError("Unsupported FCAE version")
+        aes_key = derive_transport_file_aes_key(client_public_key_b64, ephemeral_private_key)
+        cipher = AESGCM(aes_key)
+        while True:
+            frame = _read_fcae_frame_payload(enc)
+            if frame is None:
+                break
+            iv, ciphertext = frame
+            plain = cipher.decrypt(iv, ciphertext, None)
+            out.write(plain)
+            total_out += len(plain)
+    return total_out
+
+
+def encrypt_message_to_file(plaintext_path: Path, mek: bytes, output_path: Path) -> str:
+    """AES-GCM encrypt a file on disk; returns nonce_b64. Ciphertext written to output_path."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    nonce = generate_nonce(MEK_NONCE_SIZE)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    encryptor = Cipher(algorithms.AES(mek), modes.GCM(nonce)).encryptor()
+    with open(plaintext_path, "rb") as src, open(output_path, "wb") as dst:
+        while True:
+            chunk = src.read(1024 * 1024)
+            if not chunk:
+                break
+            dst.write(encryptor.update(chunk))
+        dst.write(encryptor.finalize())
+    return base64.b64encode(nonce).decode("utf-8")
+
+
 def decrypt_transport_blob(
     client_public_key_b64: str,
     encrypted_blob: bytes,
@@ -146,6 +255,15 @@ def decrypt_transport_blob(
     Returns:
         Decrypted plaintext bytes.
     """
+    if is_fcae_transport_blob(encrypted_blob):
+        import io
+
+        return _decrypt_fcae_transport_stream_io(
+            client_public_key_b64,
+            io.BytesIO(encrypted_blob),
+            ephemeral_private_key,
+        )
+
     if len(encrypted_blob) < nonce_size + 16:
         # crypto_box has a MAC; ciphertext must have at least some overhead.
         raise ValueError("Encrypted blob is too short to contain nonce + ciphertext")

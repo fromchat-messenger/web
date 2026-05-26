@@ -15,7 +15,9 @@ import sys
 import time
 import base64
 import os
-from typing import Dict, Any
+import tempfile
+from pathlib import Path
+from typing import Dict, Any, Union
 from fastapi import FastAPI, HTTPException, status
 from nacl.exceptions import CryptoError
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +29,14 @@ logger = logging.getLogger("uvicorn.error")
 _B64_DECODE_KW = {"validate": True} if sys.version_info >= (3, 11) else {}
 
 # Import encryption modules
-from .encryption import generate_nonce, TRANSPORT_NONCE_SIZE, decrypt_transport_blob, decrypt_transport_message
+from .encryption import (
+    generate_nonce,
+    TRANSPORT_NONCE_SIZE,
+    decrypt_transport_blob,
+    decrypt_transport_message,
+    is_fcae_transport_blob,
+    decrypt_fcae_transport_blob_to_file,
+)
 from .processor import process_encrypted_message, process_encrypted_message_and_files
 
 try:
@@ -374,40 +383,84 @@ async def process_message_with_files(
     )
 
     plaintext_files: list[bytes] = []
+    plaintext_file_paths: list[Path | None] = []
     filenames: list[str] = []
-    for idx, tf in enumerate(transport_files):
-        enc_b64 = tf.get("encrypted_file_data_b64", "")
-        try:
-            transport_blob = base64.b64decode(enc_b64, **_B64_DECODE_KW)
-        except Exception as e:
-            logger.error("Invalid base64 for transport file index=%s filename=%r: %s", idx, tf.get("filename"), e)
-            raise
-        try:
-            plaintext_files.append(
-                decrypt_transport_blob(
-                    client_public_key_b64=client_public_key_b64,
-                    encrypted_blob=transport_blob,
-                    ephemeral_private_key=private_key,
-                )
-            )
-        except Exception as e:
-            logger.error(
-                "Transport file decrypt failed index=%s filename=%r (check same ephemeral as message): %s",
-                idx,
-                tf.get("filename"),
-                e,
-            )
-            raise
-        filenames.append(tf.get("filename", "file"))
+    temp_paths: list[Path] = []
+    try:
+        for idx, tf in enumerate(transport_files):
+            enc_path = (tf.get("encrypted_file_path") or "").strip()
+            if enc_path:
+                blob_path = Path(enc_path)
+                if not blob_path.is_file():
+                    raise ValueError(f"Transport file path missing index={idx}")
+                prefix = blob_path.read_bytes()[: len(b"FCAE") + 1]
+                if is_fcae_transport_blob(prefix):
+                    plain_tmp = Path(tempfile.mkstemp(prefix="fcae-plain-", suffix=".bin")[1])
+                    temp_paths.append(plain_tmp)
+                    decrypt_fcae_transport_blob_to_file(
+                        client_public_key_b64=client_public_key_b64,
+                        encrypted_path=blob_path,
+                        ephemeral_private_key=private_key,
+                        output_path=plain_tmp,
+                    )
+                    plaintext_files.append(b"")
+                    plaintext_file_paths.append(plain_tmp)
+                else:
+                    transport_blob = blob_path.read_bytes()
+                    plaintext_files.append(
+                        decrypt_transport_blob(
+                            client_public_key_b64=client_public_key_b64,
+                            encrypted_blob=transport_blob,
+                            ephemeral_private_key=private_key,
+                        )
+                    )
+                    plaintext_file_paths.append(None)
+            else:
+                enc_b64 = tf.get("encrypted_file_data_b64", "")
+                try:
+                    transport_blob = base64.b64decode(enc_b64, **_B64_DECODE_KW)
+                except Exception as e:
+                    logger.error(
+                        "Invalid base64 for transport file index=%s filename=%r: %s",
+                        idx,
+                        tf.get("filename"),
+                        e,
+                    )
+                    raise
+                try:
+                    plaintext_files.append(
+                        decrypt_transport_blob(
+                            client_public_key_b64=client_public_key_b64,
+                            encrypted_blob=transport_blob,
+                            ephemeral_private_key=private_key,
+                        )
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Transport file decrypt failed index=%s filename=%r (check same ephemeral as message): %s",
+                        idx,
+                        tf.get("filename"),
+                        e,
+                    )
+                    raise
+                plaintext_file_paths.append(None)
+            filenames.append(tf.get("filename", "file"))
 
-    return process_encrypted_message_and_files(
-        plaintext_message=plaintext_message,
-        plaintext_files=plaintext_files,
-        filenames=filenames,
-        compliance_public_key_b64=compliance_public_key_b64,
-        sender_public_key_b64=sender_public_key_b64,
-        recipient_public_key_b64=recipient_public_key_b64,
-    )
+        return process_encrypted_message_and_files(
+            plaintext_message=plaintext_message,
+            plaintext_files=plaintext_files,
+            filenames=filenames,
+            plaintext_file_paths=plaintext_file_paths,
+            compliance_public_key_b64=compliance_public_key_b64,
+            sender_public_key_b64=sender_public_key_b64,
+            recipient_public_key_b64=recipient_public_key_b64,
+        )
+    finally:
+        for p in temp_paths:
+            try:
+                p.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 @app.post("/process-with-files", response_model=None)

@@ -537,6 +537,54 @@ async def complete_resumable_upload(upload_id: str, request: Request):
     return await complete_resumable_upload_internal(upload_id, int(user_id_header))
 
 
+async def get_resumable_upload_blob_path_internal(upload_id: str, user_id: int) -> dict:
+    """Return on-disk path to completed resumable ciphertext (no base64)."""
+    meta = _read_resumable_meta(upload_id)
+    _assert_resumable_access(meta, user_id)
+    if not meta.get("complete"):
+        raise HTTPException(status_code=409, detail="Upload not completed")
+    data_path = _resumable_data_path(upload_id)
+    if not data_path.exists():
+        raise HTTPException(status_code=404, detail="Upload payload not found")
+    return {
+        "upload_id": upload_id,
+        "filename": meta["filename"],
+        "file_size": int(meta.get("total_size", 0)),
+        "encrypted_file_path": str(data_path.resolve()),
+    }
+
+
+async def upload_encrypted_file_from_path_internal(
+    filename: str,
+    source_path: Path,
+    content_type: str = "application/octet-stream",
+    allowed_user_ids: list[int] | None = None,
+) -> dict:
+    """Store a pre-encrypted file by copying from a local path (no base64)."""
+    allowed_user_ids = allowed_user_ids or []
+    src = Path(source_path)
+    if not src.is_file():
+        raise HTTPException(status_code=400, detail="source_path is not a file")
+    _ensure_dirs()
+    original_name = _secure_filename(filename or "file")
+    uid = uuid.uuid4().hex
+    stored_name = f"{uid}_{original_name}"
+    dest = FILES_DIR / stored_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    import shutil
+
+    shutil.copyfile(src, dest)
+    dest.chmod(0o600)
+    _store_file_permissions(stored_name, allowed_user_ids)
+    size = dest.stat().st_size
+    return {
+        "file_id": stored_name,
+        "filename": original_name,
+        "size": size,
+        "path": f"/uploads/files/encrypted/{stored_name}",
+    }
+
+
 async def get_resumable_upload_data_internal(upload_id: str, user_id: int) -> dict:
     """Internal implementation for in-process calls."""
     meta = _read_resumable_meta(upload_id)

@@ -22,6 +22,7 @@ from .encryption import (
     decrypt_transport_message,
     generate_mek,
     encrypt_message,
+    encrypt_message_to_file,
     wrap_mek,
     derive_shared_secret,
     derive_key_from_shared_secret,
@@ -205,6 +206,9 @@ def _generate_thumbnail(image_bytes: bytes) -> tuple[str | None, list[int]]:
         return (None, [1, 1])
 
 
+_LARGE_FILE_THUMB_BYTES = 32 * 1024 * 1024
+
+
 def process_encrypted_message_and_files(
     plaintext_message: bytes,
     plaintext_files: list[bytes],
@@ -212,6 +216,7 @@ def process_encrypted_message_and_files(
     compliance_public_key_b64: str,
     sender_public_key_b64: str,
     recipient_public_key_b64: str,
+    plaintext_file_paths: list[Path | None] | None = None,
 ) -> Dict[str, Any]:
     """
     Process a message and its attached files using a single MEK.
@@ -230,6 +235,10 @@ def process_encrypted_message_and_files(
     if len(filenames) != len(plaintext_files):
         filenames = [f"file_{i}" for i in range(len(plaintext_files))]
 
+    paths = plaintext_file_paths or [None] * len(plaintext_files)
+    if len(paths) < len(plaintext_files):
+        paths = paths + [None] * (len(plaintext_files) - len(paths))
+
     # One MEK for everything in this envelope
     mek = generate_mek()
 
@@ -239,9 +248,22 @@ def process_encrypted_message_and_files(
     file_sizes: list[int] = []
     for i, f_bytes in enumerate(plaintext_files):
         name = filenames[i] if i < len(filenames) else ""
-        file_sizes.append(len(f_bytes))
-        if Path(name).suffix.lower() in _IMAGE_EXTENSIONS:
+        path = paths[i]
+        size = int(path.stat().st_size) if path is not None else len(f_bytes)
+        file_sizes.append(size)
+        if (
+            path is None
+            and Path(name).suffix.lower() in _IMAGE_EXTENSIONS
+        ):
             thumb_b64, wh = _generate_thumbnail(f_bytes)
+            file_thumbnails.append(thumb_b64 or "")
+            file_aspect_ratios.append(wh)
+        elif (
+            path is not None
+            and size <= _LARGE_FILE_THUMB_BYTES
+            and Path(name).suffix.lower() in _IMAGE_EXTENSIONS
+        ):
+            thumb_b64, wh = _generate_thumbnail(path.read_bytes())
             file_thumbnails.append(thumb_b64 or "")
             file_aspect_ratios.append(wh)
         else:
@@ -270,10 +292,17 @@ def process_encrypted_message_and_files(
 
     # Encrypt files (same MEK, per-file nonce)
     files_out: list[Dict[str, Any]] = []
+    import tempfile
+
     for i, f_bytes in enumerate(plaintext_files):
-        f_nonce, f_ciphertext = encrypt_message(f_bytes, mek)
-        entry: Dict[str, Any] = {"nonce": f_nonce, "ciphertext": f_ciphertext}
-        files_out.append(entry)
+        path = paths[i]
+        if path is not None:
+            enc_tmp = Path(tempfile.mkstemp(prefix="mek-enc-", suffix=".bin")[1])
+            f_nonce = encrypt_message_to_file(path, mek, enc_tmp)
+            files_out.append({"nonce": f_nonce, "ciphertext_path": str(enc_tmp)})
+        else:
+            f_nonce, f_ciphertext = encrypt_message(f_bytes, mek)
+            files_out.append({"nonce": f_nonce, "ciphertext": f_ciphertext})
 
     # Derive wrap keys deterministically (same as existing flow)
     sender_key_bytes = base64.b64decode(sender_public_key_b64)
