@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 TRANSPORT_NONCE_SIZE = 24  # For X25519 transport encryption (PyNaCl Box/XSalsa20Poly1305)
 MEK_NONCE_SIZE = 12        # For AES-GCM content encryption
 MEK_SIZE = 32              # Message Encryption Key size
+GCM_TAG_SIZE = 16          # AES-GCM authentication tag appended to file ciphertext
+FILE_ENCRYPT_CHUNK_SIZE = 1024 * 1024
 
 # Client streaming transport format (chunked AES-256-GCM): FCAE | version | frames…
 FCAE_MAGIC = b"FCAE"
@@ -216,7 +218,12 @@ def decrypt_fcae_transport_blob_to_file(
 
 
 def encrypt_message_to_file(plaintext_path: Path, mek: bytes, output_path: Path) -> str:
-    """AES-GCM encrypt a file on disk; returns nonce_b64. Ciphertext written to output_path."""
+    """
+    AES-GCM encrypt a file on disk; returns nonce_b64.
+
+    On-disk layout: ``ciphertext || tag`` (16-byte GCM tag at EOF).
+    Hazmat ``encryptor.finalize()`` does not emit the tag; it is taken from ``encryptor.tag``.
+    """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
     nonce = generate_nonce(MEK_NONCE_SIZE)
@@ -224,12 +231,66 @@ def encrypt_message_to_file(plaintext_path: Path, mek: bytes, output_path: Path)
     encryptor = Cipher(algorithms.AES(mek), modes.GCM(nonce)).encryptor()
     with open(plaintext_path, "rb") as src, open(output_path, "wb") as dst:
         while True:
-            chunk = src.read(1024 * 1024)
+            chunk = src.read(FILE_ENCRYPT_CHUNK_SIZE)
             if not chunk:
                 break
             dst.write(encryptor.update(chunk))
-        dst.write(encryptor.finalize())
+        encryptor.finalize()
+        dst.write(encryptor.tag)
     return base64.b64encode(nonce).decode("utf-8")
+
+
+def decrypt_message_to_file(
+    nonce_b64: str,
+    mek: bytes,
+    encrypted_path: Path,
+    output_path: Path,
+) -> int:
+    """
+    Decrypt a file produced by [encrypt_message_to_file] (ciphertext || tag).
+
+    Returns plaintext byte count.
+    """
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    nonce = base64.b64decode(nonce_b64)
+    enc_size = encrypted_path.stat().st_size
+    if enc_size < GCM_TAG_SIZE:
+        raise ValueError("Encrypted file is too short")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    ciphertext_length = enc_size - GCM_TAG_SIZE
+    total_out = 0
+
+    with open(encrypted_path, "rb") as src:
+        src.seek(ciphertext_length)
+        tag = src.read(GCM_TAG_SIZE)
+        if len(tag) != GCM_TAG_SIZE:
+            raise ValueError("Encrypted file truncated (missing GCM tag)")
+
+        decryptor = Cipher(algorithms.AES(mek), modes.GCM(nonce, tag)).decryptor()
+        src.seek(0)
+
+        with open(output_path, "wb") as dst:
+            processed = 0
+            while processed < ciphertext_length:
+                to_read = min(FILE_ENCRYPT_CHUNK_SIZE, ciphertext_length - processed)
+                chunk = src.read(to_read)
+                if len(chunk) != to_read:
+                    raise ValueError("Encrypted file truncated")
+                processed += len(chunk)
+                plain = decryptor.update(chunk)
+                if plain:
+                    dst.write(plain)
+                    total_out += len(plain)
+            final = decryptor.finalize()
+            if final:
+                dst.write(final)
+                total_out += len(final)
+
+    if total_out <= 0:
+        raise ValueError("Decrypted file is empty")
+    return total_out
 
 
 def decrypt_transport_blob(

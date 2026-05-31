@@ -114,27 +114,40 @@ def decrypt_message(envelope_data: Dict[str, Any], compliance_private_key: X2551
     return plaintext.decode("utf-8")
 
 
-def decrypt_file_bytes_from_meta(meta: Dict[str, Any], encrypted_bytes: bytes, *, key_file: str = "compliance_keypair.txt") -> bytes:
+GCM_TAG_SIZE = 16
+
+
+def _unwrap_mek_from_meta(meta: Dict[str, Any], *, key_file: str) -> bytes:
     nonce_b64 = get_str(meta, keys=["nonce_b64", "iv_b64", "nonce", "iv"], label="nonce/iv (base64)")
-    nonce = base64.b64decode(nonce_b64)
+    _ = base64.b64decode(nonce_b64)  # validate early
 
     mek_key = first_present_key(meta, ["compliance_wrapped_mek_b64", "compliance_wrapped_mek"])
     if mek_key:
         compliance_private_key = load_compliance_private_key(key_file=key_file)
         compliance_public_key = compliance_private_key.public_key()
-        mek = decrypt_compliance_mek(str(meta[mek_key]), compliance_private_key, compliance_public_key)
-    else:
-        wrap_public_key_b64 = get_str(
-            meta,
-            keys=["wrap_public_key_b64", "wrap_public_key", "public_key_b64"],
-            label="wrap public key (base64)",
-        )
-        wrap_context = get_str(meta, keys=["wrap_context"], label="wrap context")
-        wrapped_mek_b64 = get_str(meta, keys=["wrapped_mek_b64", "wrapped_mek"], label="wrapped MEK (base64)")
-        mek = decrypt_wrapped_mek_with_public_key(wrapped_mek_b64, wrap_public_key_b64, wrap_context)
+        return decrypt_compliance_mek(str(meta[mek_key]), compliance_private_key, compliance_public_key)
 
-    aesgcm = AESGCM(mek)
-    return aesgcm.decrypt(nonce, encrypted_bytes, None)
+    wrap_public_key_b64 = get_str(
+        meta,
+        keys=["wrap_public_key_b64", "wrap_public_key", "public_key_b64"],
+        label="wrap public key (base64)",
+    )
+    wrap_context = get_str(meta, keys=["wrap_context"], label="wrap context")
+    wrapped_mek_b64 = get_str(meta, keys=["wrapped_mek_b64", "wrapped_mek"], label="wrapped MEK (base64)")
+    return decrypt_wrapped_mek_with_public_key(wrapped_mek_b64, wrap_public_key_b64, wrap_context)
+
+
+def decrypt_file_bytes_from_meta(meta: Dict[str, Any], encrypted_bytes: bytes, *, key_file: str = "compliance_keypair.txt") -> bytes:
+    """
+    Decrypt file ciphertext from [encrypt_message_to_file]: ``ciphertext || tag`` (tag last 16 bytes).
+    """
+    if len(encrypted_bytes) < GCM_TAG_SIZE:
+        raise ValueError("Encrypted file is too short (missing GCM tag)")
+
+    nonce_b64 = get_str(meta, keys=["nonce_b64", "iv_b64", "nonce", "iv"], label="nonce/iv (base64)")
+    nonce = base64.b64decode(nonce_b64)
+    mek = _unwrap_mek_from_meta(meta, key_file=key_file)
+    return AESGCM(mek).decrypt(nonce, encrypted_bytes, None)
 
 
 def derive_auth_secret(username: str, password: str) -> str:

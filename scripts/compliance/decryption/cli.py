@@ -192,11 +192,29 @@ def _logout(api_base_url: str, token: str) -> None:
         pass
 
 
+def _resolve_bearer_token(
+    *,
+    token: Optional[str] = None,
+    jwt: Optional[str] = None,
+) -> Optional[str]:
+    """CLI flag, deprecated --jwt alias, or FROMCHAT_API_TOKEN / FROMCHAT_TOKEN env."""
+    if token and jwt:
+        raise SystemExit("Provide only one of --token or --jwt.")
+    explicit = (token or jwt or "").strip()
+    if explicit:
+        return explicit
+    for env_name in ("FROMCHAT_API_TOKEN", "FROMCHAT_TOKEN"):
+        env_val = os.environ.get(env_name, "").strip()
+        if env_val:
+            return env_val
+    return None
+
+
 def _ensure_online_auth(
     *,
     server: Optional[str],
     https: Optional[bool],
-    jwt: Optional[str],
+    bearer_token: Optional[str],
     username: Optional[str],
     password: Optional[str],
 ) -> _AuthResult:
@@ -205,19 +223,22 @@ def _ensure_online_auth(
     use_https = bool(https) if https is not None else _prompt_bool("Use HTTPS", default=True)
     api_base_url = _build_api_base(server, https=use_https)
 
-    if jwt and (username or password):
-        raise SystemExit("Provide either --jwt OR --username/--password, not both.")
+    if bearer_token and (username or password):
+        raise SystemExit("Provide either --token OR --username/--password, not both.")
 
-    if jwt:
-        return _AuthResult(api_base_url=api_base_url, token=jwt.strip(), did_login=False)
+    if bearer_token:
+        return _AuthResult(api_base_url=api_base_url, token=bearer_token, did_login=False)
 
     step("Authentication")
     try:
         if not username and password is None:
-            method = _choose_option(["1) Login + password", "2) JWT token"], default="1")
+            method = _choose_option(
+                ["1) Login + password", "2) API token (Bearer)"],
+                default="1",
+            )
             if method.strip() == "2":
-                jwt_in = _prompt("JWT token")
-                return _AuthResult(api_base_url=api_base_url, token=jwt_in.strip(), did_login=False)
+                token_in = _prompt("API token")
+                return _AuthResult(api_base_url=api_base_url, token=token_in.strip(), did_login=False)
 
         if not username:
             username = _prompt("Username")
@@ -243,9 +264,13 @@ def cmd_extract(args: argparse.Namespace) -> None:
     else:
         https_choice = _prompt_bool_required("Use HTTPS")
 
-    jwt: Optional[str] = args.jwt
+    bearer_token: Optional[str] = _resolve_bearer_token(
+        token=getattr(args, "token", None),
+        jwt=getattr(args, "jwt", None),
+    )
     username: Optional[str] = args.username
     password: Optional[str] = args.password
+    used_password_login = bool(username or password is not None)
 
     message_ids: List[int] = []
     if getattr(args, "message_ids", None):
@@ -261,7 +286,7 @@ def cmd_extract(args: argparse.Namespace) -> None:
             auth = _ensure_online_auth(
                 server=server,
                 https=https_choice,
-                jwt=jwt,
+                bearer_token=bearer_token,
                 username=username,
                 password=password,
             )
@@ -270,15 +295,21 @@ def cmd_extract(args: argparse.Namespace) -> None:
             msg = str(e)
             warning(msg)
             if "HTTP 401" in msg or "HTTP 403" in msg:
-                warning("Auth failed. Please enter username and password again.")
-                jwt = None
-                username = _prompt("Username")
-                password = _prompt("Password", secret=True)
+                if bearer_token and not used_password_login:
+                    warning("Auth failed. Please enter a valid API token again.")
+                    bearer_token = _prompt("API token")
+                else:
+                    warning("Auth failed. Please enter username and password again.")
+                    bearer_token = None
+                    username = _prompt("Username")
+                    password = _prompt("Password", secret=True)
+                    used_password_login = True
                 continue
 
-            jwt = None
+            bearer_token = None
             username = None
             password = None
+            used_password_login = False
             if not _prompt_bool("Try again", default=True):
                 raise SystemExit(1)
             continue
@@ -301,10 +332,15 @@ def cmd_extract(args: argparse.Namespace) -> None:
             msg = str(e)
             if "HTTP 401" in msg or "HTTP 403" in msg:
                 warning(msg)
-                warning("Auth failed. Please enter username and password again.")
-                jwt = None
-                username = _prompt("Username")
-                password = _prompt("Password", secret=True)
+                if bearer_token and not used_password_login:
+                    warning("Auth failed. Please enter a valid API token again.")
+                    bearer_token = _prompt("API token")
+                else:
+                    warning("Auth failed. Please enter username and password again.")
+                    bearer_token = None
+                    username = _prompt("Username")
+                    password = _prompt("Password", secret=True)
+                    used_password_login = True
                 continue
             else:
                 raise
@@ -380,8 +416,13 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--server", required=False, help="Server host:port (e.g. localhost:8301)")
     extract_parser.add_argument("--https", action="store_true", help="Use HTTPS (default in interactive mode)")
     extract_parser.add_argument("--http", action="store_true", help="Use HTTP")
-    extract_parser.add_argument("--jwt", required=False, help="JWT token (Bearer)")
-    extract_parser.add_argument("--username", required=False, help="Login username (alternative to --jwt)")
+    extract_parser.add_argument(
+        "--token",
+        required=False,
+        help="API Bearer token (from login/register). Also FROMCHAT_API_TOKEN or FROMCHAT_TOKEN env.",
+    )
+    extract_parser.add_argument("--jwt", required=False, help=argparse.SUPPRESS)
+    extract_parser.add_argument("--username", required=False, help="Login username (alternative to --token)")
     extract_parser.add_argument("--password", required=False, help="Login password (will be prompted if omitted)")
     extract_parser.add_argument("--message-ids", required=False, type=int, nargs="+", help="Message IDs to extract")
     extract_parser.add_argument("--out-dir", required=False, help="Directory to write the extracted bundle")
@@ -422,6 +463,7 @@ def _run_full_interactive() -> None:
                     server=None,
                     https=False,
                     http=False,
+                    token=None,
                     jwt=None,
                     username=None,
                     password=None,

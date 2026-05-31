@@ -22,6 +22,7 @@ When working with this project, follow these rules:
 - If possible, try to update files in a single edit when making multiple changes.
 - Do NOT "cd" to the project directory.
 - NEVER edit/delete/regenerate .env files without explicit permission.
+- Don't use rg, it doesn't work anyway.
 
 ## Testing & Validation
 - Do NOT "test the implementation" when you are done. The only exception is when you 
@@ -32,8 +33,7 @@ When working with this project, follow these rules:
 - If the typecheck passed, there's no need for checking the linter errors.
 
 ## Async Operations
-- When you need a delay, use `await delay(millis);` from `@/utils/utils` in an async function. If the current function is not async,
-  make it async.
+- When you need a delay, use `await delay(millis);` from `@/utils/utils` in an async function. If the current function is not async, make it async.
 
 ## Database
 - NEVER create database migrations, they are auto-generated.
@@ -59,7 +59,7 @@ When working with this project, follow these rules:
 - Put SCSS into one folder per page
 
 ## Animations with Framer Motion
-- Don't use variants if they are used only once
+- Don't use variants if they are used only once  
 
 ## Debug Mode
 - When in debug mode and the issue is not yet fixed, ALWAYS end responses with `<reproduction_steps>` containing the steps to reproduce the issue and trigger logging

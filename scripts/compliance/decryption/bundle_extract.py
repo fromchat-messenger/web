@@ -82,18 +82,27 @@ def extract_single_message_to_bundle(api_base_url: str, token: str, message_id: 
         with open(enc_abs, "wb") as outf:
             outf.write(file_bytes)
 
-        meta_out = {
+        envelope_compliance_mek = data.get("compliance_wrapped_mek_b64")
+        use_compliance_mek = (
+            isinstance(envelope_compliance_mek, str)
+            and envelope_compliance_mek
+            and wrapped_mek_b64 == envelope_compliance_mek
+        )
+        meta_out: Dict[str, Any] = {
             "kind": "dm_file",
             "message_id": data.get("message_id"),
             "dm_file_id": file_id,
             "filename": name,
             "path": path,
             "nonce_b64": nonce_b64,
-            "wrapped_mek_b64": wrapped_mek_b64,
-            "wrap_context": "sender_wrap_key",
-            "wrap_public_key_b64": sender_public_key_b64,
             "encrypted_file_local": enc_rel,
         }
+        if use_compliance_mek:
+            meta_out["compliance_wrapped_mek_b64"] = wrapped_mek_b64
+        else:
+            meta_out["wrapped_mek_b64"] = wrapped_mek_b64
+            meta_out["wrap_context"] = "sender_wrap_key"
+            meta_out["wrap_public_key_b64"] = sender_public_key_b64
         meta_filename = f"{message_id}_{file_id or 'x'}_{safe_name}.meta.json"
         meta_abs = os.path.join(files_dir, meta_filename)
         meta_rel = os.path.relpath(meta_abs, bundle_root)
