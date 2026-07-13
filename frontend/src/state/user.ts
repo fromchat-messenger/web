@@ -11,7 +11,7 @@ import type { UserState } from "./types";
 interface UserStore {
     user: UserState;
     setUser: (token: string, user: User) => void;
-    logout: () => void;
+    logout: () => Promise<void>;
     restoreFromStorage: () => Promise<void>;
     setSuspended: (reason: string) => void;
 }
@@ -46,12 +46,21 @@ export const useUserStore = create<UserStore>((set) => ({
         // Ping will be sent automatically on WebSocket reconnect
         // No need to send here to avoid duplicate pings
     },
-    logout: () => {
+    logout: async () => {
+        const token = useUserStore.getState().user.authToken;
+        if (token) {
+            try {
+                await api.user.auth.logout(token);
+            } catch (error) {
+                console.error("Server logout failed:", error);
+            }
+        }
+
         try {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('currentUser');
+            localStorage.removeItem("authToken");
+            localStorage.removeItem("currentUser");
         } catch (error) {
-            console.error('Failed to clear localStorage:', error);
+            console.error("Failed to clear localStorage:", error);
         }
 
         onlineStatusManager.setAuthToken(null);

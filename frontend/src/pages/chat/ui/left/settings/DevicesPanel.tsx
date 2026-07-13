@@ -5,6 +5,7 @@ import { useUserStore } from "@/state/user";
 import api from "@/core/api";
 import type { DeviceInfo } from "@/core/api/user/devices";
 import { confirm } from "mdui/functions/confirm";
+import { parseApiTimestamp } from "@/utils/utils";
 import styles from "@/pages/chat/css/settings-dialog.module.scss";
 
 export function DevicesPanel() {
@@ -92,7 +93,7 @@ export function DevicesPanel() {
 
     function formatLastSeen(dateStr: string | undefined): string {
         if (!dateStr) return "Never";
-        const date = new Date(dateStr);
+        const date = parseApiTimestamp(dateStr);
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffMins = Math.floor(diffMs / 60000);

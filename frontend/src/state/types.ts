@@ -1,4 +1,4 @@
-import type { Message, User } from "@/core/types";
+import type { Message, User, VerificationStatus } from "@/core/types";
 import { MessagePanel } from "@/pages/chat/ui/right/panels/MessagePanel";
 import { PublicChatPanel } from "@/pages/chat/ui/right/panels/PublicChatPanel";
 import { DMPanel } from "@/pages/chat/ui/right/panels/DMPanel";
@@ -17,6 +17,7 @@ export interface ProfileDialogData {
     online?: boolean;
     isOwnProfile: boolean;
     verified?: boolean;
+    verification_status?: VerificationStatus;
     suspended?: boolean;
     suspension_reason?: string | null;
     deleted?: boolean;

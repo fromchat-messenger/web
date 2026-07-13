@@ -215,9 +215,9 @@ export function UsernameSearch({ containerRef, headerRef, bottomAppBarRef }: Use
                                     <div className={styles.searchResultBody}>
                                         <div className={styles.searchResultHeadline}>
                                             {searchUser.username}
-                                            <StatusBadge 
+                                            <StatusBadge
+                                                verificationStatus={searchUser.verification_status}
                                                 verified={searchUser.verified || false}
-                                                userId={searchUser.id}
                                                 size="small"
                                             />
                                         </div>

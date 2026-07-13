@@ -66,6 +66,16 @@ export function HomeFooter({ onScrollToDownload }: HomeFooterProps) {
                     </a>
                 </div>
                 <div className={styles.footerSection}>
+                    <Link to="/privacy" className={styles.footerLink}>
+                        <MaterialIcon name="shield" className={styles.footerLinkIcon} />
+                        Политика конфиденциальности
+                    </Link>
+                    <Link to="/terms" className={styles.footerLink}>
+                        <MaterialIcon name="description" className={styles.footerLinkIcon} />
+                        Пользовательское соглашение
+                    </Link>
+                </div>
+                <div className={styles.footerSection}>
                     <a
                         href="https://t.me/fromchat_ch"
                         target="_blank"

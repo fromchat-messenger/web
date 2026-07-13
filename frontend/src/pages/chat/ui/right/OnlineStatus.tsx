@@ -7,6 +7,8 @@
 
 import { usePresenceStore } from "@/state/presence";
 import { useUserStore } from "@/state/user";
+import { formatDeletedUserLastSeen, isEpochLastSeen } from "@/core/userDisplay";
+import { parseApiTimestamp } from "@/utils/utils";
 import styles from "@/pages/chat/css/TypingIndicators.module.scss";
 
 interface OnlineStatusProps {
@@ -20,7 +22,10 @@ export function OnlineStatus({ userId, showLastSeen = false }: OnlineStatusProps
     const status = userId === user.currentUser?.id ? { online: true, lastSeen: new Date().toISOString() } : onlineStatuses.get(userId);
 
     function formatLastSeen(lastSeen: string): string {
-        const date = new Date(lastSeen);
+        if (isEpochLastSeen(lastSeen)) {
+            return formatDeletedUserLastSeen();
+        }
+        const date = parseApiTimestamp(lastSeen);
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffMins = Math.floor(diffMs / (1000 * 60));

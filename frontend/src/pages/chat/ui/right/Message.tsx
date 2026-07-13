@@ -14,6 +14,8 @@ import { useImmer } from "use-immer";
 import { createPortal } from "react-dom";
 import { parseProfileLink } from "@/core/profileLinks";
 import { MaterialCircularProgress, MaterialIconButton, MaterialList, MaterialListItem } from "@/utils/material";
+import { displayNameForUser, isDeletedPeer } from "@/core/userDisplay";
+import { DeletedUserAvatar } from "@/core/DeletedUserAvatar";
 import styles from "@/pages/chat/css/Message.module.scss";
 import replyPreviewStyles from "@/pages/chat/css/reply-preview.module.scss";
 
@@ -517,6 +519,8 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
         return messageText.length > 0 && emojiRegex.test(messageText) && messageText.length <= 4; // Most emojis are 1-4 characters
     }, [messageText]);
 
+    const isDeletedSender = isDeletedPeer({ id: message.user_id, username: message.username });
+
     return (
         <>
             <div
@@ -526,13 +530,21 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
             >
                 {!isAuthor && !isDm && (
                     <div className={styles.messageProfilePic} onClick={handleProfileClick}>
-                        <img
-                            src={message.profile_picture || defaultAvatar}
-                            alt={message.username}
-                            onError={(e) => {
-                                e.target.src = defaultAvatar;
-                            }}
-                        />
+                        {isDeletedSender ? (
+                            <DeletedUserAvatar
+                                userId={message.user_id}
+                                className={styles.deletedUserAvatar}
+                                iconClassName={styles.deletedUserAvatarIcon}
+                            />
+                        ) : (
+                            <img
+                                src={message.profile_picture || defaultAvatar}
+                                alt={message.username}
+                                onError={(e) => {
+                                    e.target.src = defaultAvatar;
+                                }}
+                            />
+                        )}
                     </div>
                 )}
 
@@ -541,12 +553,14 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
                         <div
                             className={styles.messageUsername}
                             onClick={handleProfileClick}>
-                            {message.username}
-                            <StatusBadge
-                                verified={message.verified || false}
-                                userId={message.user_id}
-                                size="small"
-                            />
+                            {displayNameForUser({ id: message.user_id, username: message.username })}
+                            {!isDeletedSender && (
+                                <StatusBadge
+                                    verificationStatus={message.verification_status}
+                                    verified={message.verified || false}
+                                    size="small"
+                                />
+                            )}
                         </div>
                     )}
 

@@ -10,7 +10,7 @@ import logging
 from sqlalchemy.orm.exc import DetachedInstanceError
 
 # Import from same directory
-from .routes import account, messaging, profile, push, webrtc, devices, moderation, download, keys, envelope_messaging, livekit
+from .routes import account, messaging, profile, public_chat, push, webrtc, devices, moderation, download, keys, envelope_messaging, livekit, static as static_routes
 from .routes.account import get_server_instance_id
 from .models import User
 from .constants import OWNER_USERNAME
@@ -325,6 +325,7 @@ app.add_middleware(
 app.include_router(account.router)
 app.include_router(envelope_messaging.router)
 app.include_router(messaging.router)
+app.include_router(public_chat.router)
 app.include_router(profile.router)
 app.include_router(push.router, prefix="/push")
 app.include_router(webrtc.router, prefix="/webrtc")
@@ -333,6 +334,7 @@ app.include_router(devices.router, prefix="/devices")
 app.include_router(moderation.router)
 app.include_router(download.router)
 app.include_router(keys.router)
+app.include_router(static_routes.router)
 
 
 @app.get("/health")

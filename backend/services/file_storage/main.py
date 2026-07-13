@@ -666,7 +666,161 @@ async def get_file(filename: str, request: Request):
     return FileResponse(str(path), media_type="application/octet-stream", filename=filename)
 
 
+@app.post("/uploads/files/normal/store", response_model=None)
+async def store_normal_file(request: Request, file: UploadFile = File(...)):
+    """Store a plain public-chat attachment at a fixed stored name."""
+    stored_name = (await request.form()).get("stored_name")
+    if not stored_name or not str(stored_name).strip():
+        raise HTTPException(status_code=400, detail="stored_name is required")
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        data = await file.read()
+        tmp.write(data)
+        tmp_path = Path(tmp.name)
+    try:
+        return await store_normal_file_from_path_internal(str(stored_name).strip(), tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 # File serving routes (moved from main service)
+async def store_normal_file_from_path_internal(stored_name: str, source_path: Path) -> dict:
+    """Copy a plain public-chat attachment into FILES_NORMAL_DIR."""
+    import shutil
+
+    _ensure_dirs()
+    safe_name = Path(stored_name).name
+    if stored_name != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid stored name")
+    src = Path(source_path)
+    if not src.is_file():
+        raise HTTPException(status_code=400, detail="source_path is not a file")
+    dest = FILES_NORMAL_DIR / safe_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dest)
+    dest.chmod(0o600)
+    return {
+        "stored_name": safe_name,
+        "size": int(dest.stat().st_size),
+        "path": f"/uploads/files/normal/{safe_name}",
+    }
+
+
+def _thumb_jpeg_path(stored_name: str) -> Path:
+    return THUMBS_DIR / f"{Path(stored_name).stem}.jpg"
+
+
+def _thumb_meta_path(stored_name: str) -> Path:
+    return THUMBS_DIR / f"{Path(stored_name).stem}.json"
+
+
+async def store_public_thumb_internal(
+    stored_name: str,
+    jpeg_bytes: bytes,
+    *,
+    width: int,
+    height: int,
+    file_size: int,
+) -> dict:
+    """Persist a public-chat image thumbnail next to normal attachments."""
+    _ensure_dirs()
+    safe_name = Path(stored_name).name
+    if stored_name != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid stored name")
+    if not jpeg_bytes:
+        raise HTTPException(status_code=400, detail="Empty thumbnail")
+    thumb_path = _thumb_jpeg_path(safe_name)
+    meta_path = _thumb_meta_path(safe_name)
+    thumb_path.write_bytes(jpeg_bytes)
+    thumb_path.chmod(0o600)
+    meta = {
+        "stored_name": safe_name,
+        "width": int(width),
+        "height": int(height),
+        "file_size": int(file_size),
+        "thumb_path": f"/uploads/files/thumbs/{thumb_path.name}",
+    }
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    meta_path.chmod(0o600)
+    return meta
+
+
+async def store_public_image_dimensions_internal(
+    stored_name: str,
+    *,
+    width: int,
+    height: int,
+    file_size: int,
+) -> dict:
+    """Persist image dimensions for large public attachments (no JPEG thumbnail)."""
+    _ensure_dirs()
+    safe_name = Path(stored_name).name
+    if stored_name != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid stored name")
+    if width <= 0 or height <= 0:
+        raise HTTPException(status_code=400, detail="Invalid image dimensions")
+    meta_path = _thumb_meta_path(safe_name)
+    meta = {
+        "stored_name": safe_name,
+        "width": int(width),
+        "height": int(height),
+        "file_size": int(file_size),
+        "thumb_path": "",
+    }
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    meta_path.chmod(0o600)
+    return meta
+
+
+def get_public_thumb_meta_internal(stored_name: str) -> dict | None:
+    """Load thumbnail metadata + base64 JPEG for a normal attachment basename."""
+    import base64
+
+    _ensure_dirs()
+    safe_name = Path(stored_name).name
+    if stored_name != safe_name:
+        return None
+    thumb_path = _thumb_jpeg_path(safe_name)
+    meta_path = _thumb_meta_path(safe_name)
+    if not meta_path.is_file():
+        return None
+    width, height, file_size = 1, 1, 0
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        width = int(meta.get("width") or 1)
+        height = int(meta.get("height") or 1)
+        file_size = int(meta.get("file_size") or 0)
+    except Exception:
+        pass
+    thumbnail_b64 = ""
+    if thumb_path.is_file():
+        jpeg = thumb_path.read_bytes()
+        thumbnail_b64 = base64.b64encode(jpeg).decode("ascii")
+    return {
+        "stored_name": safe_name,
+        "width": width,
+        "height": height,
+        "file_size": file_size,
+        "thumbnail_b64": thumbnail_b64,
+        "thumb_path": f"/uploads/files/thumbs/{thumb_path.name}" if thumb_path.is_file() else "",
+    }
+
+
+async def get_file_thumb_internal(filename: str):
+    """Internal: serve public-chat thumbnail JPEGs."""
+    safe_name = Path(filename).name
+    if filename != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    # Accept either "{stem}.jpg" or a normal attachment basename.
+    path = THUMBS_DIR / safe_name
+    if not path.exists() and not safe_name.lower().endswith(".jpg"):
+        path = _thumb_jpeg_path(safe_name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return FileResponse(str(path), media_type="image/jpeg")
+
+
 async def get_file_normal_internal(filename: str):
     """Internal: serve normal (unencrypted) files. Used by proxy when in-process."""
     safe_name = Path(filename).name
@@ -675,13 +829,77 @@ async def get_file_normal_internal(filename: str):
     path = FILES_NORMAL_DIR / safe_name
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(str(path))
+    return FileResponse(str(path), media_type="application/octet-stream")
+
+
+def get_normal_file_path_internal(stored_name: str) -> Path | None:
+    """Resolve a stored public attachment basename to its on-disk path."""
+    safe_name = Path(stored_name).name
+    if stored_name != safe_name:
+        return None
+    path = FILES_NORMAL_DIR / safe_name
+    return path if path.is_file() else None
+
+
+def read_image_dimensions_from_path(path: Path) -> list[int] | None:
+    try:
+        from ..main.public_image_dimensions import read_image_dimensions_from_path as read_dims
+    except ImportError:
+        try:
+            from backend.services.main.public_image_dimensions import (
+                read_image_dimensions_from_path as read_dims,
+            )
+        except ImportError:
+            from services.main.public_image_dimensions import (
+                read_image_dimensions_from_path as read_dims,
+            )
+    return read_dims(path)
 
 
 @app.get("/uploads/files/normal/{filename}", response_model=None)
 async def get_file_normal(filename: str):
     """Serve normal (unencrypted) files."""
     return await get_file_normal_internal(filename)
+
+
+@app.get("/uploads/files/thumbs/{filename}", response_model=None)
+async def get_file_thumb(filename: str):
+    """Serve public-chat thumbnail JPEGs from THUMBS_DIR."""
+    return await get_file_thumb_internal(filename)
+
+
+@app.post("/uploads/files/thumbs/store", response_model=None)
+async def store_public_thumb(request: Request, file: UploadFile = File(...)):
+    """HTTP entry for storing a public-chat thumbnail (used when not in-process)."""
+    form = await request.form()
+    stored_name = str(form.get("stored_name") or "").strip()
+    width = int(form.get("width") or 1)
+    height = int(form.get("height") or 1)
+    file_size = int(form.get("file_size") or 0)
+    jpeg_bytes = await file.read()
+    return await store_public_thumb_internal(
+        stored_name,
+        jpeg_bytes,
+        width=width,
+        height=height,
+        file_size=file_size,
+    )
+
+
+@app.post("/uploads/files/thumbs/dimensions", response_model=None)
+async def store_public_image_dimensions(request: Request):
+    """HTTP entry for storing image dimensions without a JPEG thumbnail."""
+    form = await request.form()
+    stored_name = str(form.get("stored_name") or "").strip()
+    width = int(form.get("width") or 1)
+    height = int(form.get("height") or 1)
+    file_size = int(form.get("file_size") or 0)
+    return await store_public_image_dimensions_internal(
+        stored_name,
+        width=width,
+        height=height,
+        file_size=file_size,
+    )
 
 
 async def get_file_encrypted_internal(filename: str, user_id: int):

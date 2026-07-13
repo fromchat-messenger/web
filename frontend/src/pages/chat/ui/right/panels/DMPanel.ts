@@ -400,6 +400,7 @@ export class DMPanel extends MessagePanel {
                 bio: userProfile.bio,
                 memberSince: userProfile.created_at,
                 online: userProfile.online,
+                deleted: userProfile.deleted,
                 isOwnProfile: false
             };
         } catch (error) {

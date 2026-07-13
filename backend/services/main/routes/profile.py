@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
@@ -10,49 +11,75 @@ import io
 from fastapi import Request
 
 from ..dependencies import get_current_user, get_current_user_allow_suspended, get_db
+from ..presence_service import presence_service
 from ..models import User, UpdateBioRequest, UserProfileResponse
 from pydantic import BaseModel
 from ..validation import is_valid_username, is_valid_display_name
-from ..similarity import is_user_similar_to_verified
+from ..verification_service import (
+    VerificationStatus,
+    compute_verification_status,
+    get_verified_users_data,
+)
 from .messaging import messagingManager
 from ..security.audit import log_security
 from ..security.profanity import contains_profanity
 from ..security.rate_limit import rate_limit_per_ip
+from ..deleted_user import DELETED_LAST_SEEN, deleted_user_api_fields, is_deleted_user
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
 
 
-def _build_user_profile_response(user: User, is_owner_request: bool = False) -> UserProfileResponse:
-    should_hide_profile = (not is_owner_request) and (user.deleted or user.suspended)
+def _build_user_profile_response(
+    user: User,
+    is_owner_request: bool = False,
+    *,
+    verified_users_data: list[dict[str, str]] | None = None,
+) -> UserProfileResponse:
+    should_hide_profile = (not is_owner_request) and is_deleted_user(user)
     if not should_hide_profile:
+        online, last_seen = presence_service.get_presence(user.id)
+        verification_status = (
+            compute_verification_status(user, verified_users_data)
+            if verified_users_data is not None
+            else (
+                VerificationStatus.VERIFIED
+                if user.verified
+                else VerificationStatus.NONE
+            )
+        )
         return UserProfileResponse(
             id=user.id,
             username=user.username,
-            display_name=user.display_name,
+            display_name=user.display_name or user.username,
             profile_picture=user.profile_picture,
             bio=user.bio,
-            online=user.online,
-            last_seen=user.last_seen,
+            online=online,
+            last_seen=last_seen,
             created_at=user.created_at,
-            verified=user.verified,
-            suspended=user.suspended or False,
+            verified=bool(user.verified),
+            verification_status=verification_status.value,
+            suspended=bool(user.suspended),
             suspension_reason=user.suspension_reason,
-            deleted=user.deleted or False,
+            deleted=bool(user.deleted),
         )
 
+    hidden = deleted_user_api_fields(user.id)
     return UserProfileResponse(
         id=user.id,
-        username="deleted",
-        display_name="Deleted User",
-        profile_picture=None,
-        bio=None,
-        online=False,
-        last_seen=None,
-        created_at=None,
-        verified=False,
-        suspended=False,
-        suspension_reason=None,
-        deleted=True,
+        username=hidden["username"],
+        display_name=hidden["display_name"],
+        profile_picture=hidden["profile_picture"],
+        bio=hidden["bio"],
+        online=hidden["online"],
+        last_seen=DELETED_LAST_SEEN,
+        created_at=hidden["created_at"],
+        verified=hidden["verified"],
+        verification_status=hidden["verification_status"],
+        suspended=hidden["suspended"],
+        suspension_reason=hidden["suspension_reason"],
+        deleted=hidden["deleted"],
     )
 
 
@@ -62,6 +89,40 @@ def _ensure_owner_unsuspended(user: User | None, db: Session):
         user.suspension_reason = None
         db.commit()
         db.refresh(user)
+
+
+async def broadcast_profile_update(user: User, db: Session) -> None:
+    """Notify clients subscribed to this user that their public profile changed."""
+    try:
+        payload = build_profile_update_payload(user, viewer_id=None, db=db)
+        subscriber_count = sum(
+            1
+            for ws, subs in messagingManager.ws_subscriptions.items()
+            if user.id in subs
+        )
+        logger.info(
+            "broadcast_profile_update user_id=%s bio=%r subscribers=%s",
+            user.id,
+            user.bio,
+            subscriber_count,
+        )
+        await messagingManager.broadcast_profile_update(user.id, payload, db)
+    except Exception:
+        pass
+
+
+def build_profile_update_payload(
+    user: User,
+    viewer_id: int | None,
+    db: Session,
+) -> dict:
+    verified_users_data = get_verified_users_data(db)
+    is_owner_request = viewer_id is not None and (viewer_id == user.id or viewer_id == 1)
+    return _build_user_profile_response(
+        user,
+        is_owner_request=is_owner_request,
+        verified_users_data=verified_users_data,
+    ).model_dump(mode="json")
 
 # Request models
 class UpdateProfileRequest(BaseModel):
@@ -118,7 +179,10 @@ async def upload_profile_picture(
         profile_picture_url = f"/api/profile-picture/{filename}"
         current_user.profile_picture = profile_picture_url
         db.commit()
-        
+        db.refresh(current_user)
+
+        await broadcast_profile_update(current_user, db)
+
         return {
             "message": "Profile picture uploaded successfully",
             "profile_picture_url": profile_picture_url
@@ -154,16 +218,20 @@ async def get_user_profile(
     try:
         _ensure_owner_unsuspended(current_user, db)
 
+        online, last_seen = presence_service.get_presence(current_user.id)
+        verified_users_data = get_verified_users_data(db)
+        verification_status = compute_verification_status(current_user, verified_users_data)
         return UserProfileResponse(
             id=current_user.id,
             username=current_user.username,
             display_name=current_user.display_name,
             profile_picture=current_user.profile_picture,
             bio=current_user.bio,
-            online=current_user.online,
-            last_seen=current_user.last_seen,
+            online=online,
+            last_seen=last_seen,
             created_at=current_user.created_at,
             verified=current_user.verified,
+            verification_status=verification_status.value,
             suspended=current_user.suspended or False,
             suspension_reason=current_user.suspension_reason,
             deleted=current_user.deleted or False,
@@ -189,25 +257,29 @@ async def list_users(
     _ensure_owner_unsuspended(current_user, db)
 
     users = db.query(User).order_by(User.username.asc()).all()
-    return {
-        "users": [
+    verified_users_data = get_verified_users_data(db)
+    profile_items = []
+    for user in users:
+        online, last_seen = presence_service.get_presence(user.id)
+        verification_status = compute_verification_status(user, verified_users_data)
+        profile_items.append(
             UserProfileResponse(
                 id=user.id,
                 username=user.username,
                 display_name=user.display_name,
                 profile_picture=user.profile_picture,
                 bio=user.bio,
-                online=user.online,
-                last_seen=user.last_seen,
+                online=online,
+                last_seen=last_seen,
                 created_at=user.created_at,
                 verified=user.verified,
+                verification_status=verification_status.value,
                 suspended=user.suspended or False,
                 suspension_reason=user.suspension_reason,
-                deleted=(user.deleted or user.suspended) or False,  # Treat suspended as deleted
+                deleted=user.deleted or False,
             ).model_dump()
-            for user in users
-        ]
-    }
+        )
+    return {"users": profile_items}
 
 @router.put("/user/profile")
 @rate_limit_per_ip("10/minute")
@@ -272,6 +344,8 @@ async def update_user_profile(
     
     if updated:
         db.commit()
+        db.refresh(current_user)
+        await broadcast_profile_update(current_user, db)
         return {
             "message": "Profile updated successfully",
             "username": current_user.username,
@@ -303,7 +377,10 @@ async def update_user_bio(
     
     current_user.bio = bio_request.bio.strip()
     db.commit()
-    
+    db.refresh(current_user)
+
+    await broadcast_profile_update(current_user, db)
+
     return {
         "message": "Bio updated successfully",
         "bio": current_user.bio
@@ -340,7 +417,12 @@ async def get_user_by_username(
     _ensure_owner_unsuspended(user, db)
     
     is_owner_request = current_user.id == user.id or current_user.id == 1
-    return _build_user_profile_response(user, is_owner_request=is_owner_request)
+    verified_users_data = get_verified_users_data(db)
+    return _build_user_profile_response(
+        user,
+        is_owner_request=is_owner_request,
+        verified_users_data=verified_users_data,
+    )
 
 @router.get("/user/id/{user_id}")
 async def get_user_by_id(
@@ -362,7 +444,12 @@ async def get_user_by_id(
     _ensure_owner_unsuspended(user, db)
     
     is_owner_request = current_user.id == user.id or current_user.id == 1
-    return _build_user_profile_response(user, is_owner_request=is_owner_request)
+    verified_users_data = get_verified_users_data(db)
+    return _build_user_profile_response(
+        user,
+        is_owner_request=is_owner_request,
+        verified_users_data=verified_users_data,
+    )
 
 
 @router.post("/user/{user_id}/verify")
@@ -386,6 +473,9 @@ async def verify_user(
     target_user.verified = not target_user.verified
     db.commit()
     
+    verified_users_data = get_verified_users_data(db)
+    verification_status = compute_verification_status(target_user, verified_users_data)
+    
     log_security(
         "admin_verify_toggle",
         actor=current_user.username,
@@ -395,42 +485,12 @@ async def verify_user(
         verified=target_user.verified,
     )
 
+    await broadcast_profile_update(target_user, db)
+
     return {
         "verified": target_user.verified,
+        "verification_status": verification_status.value,
         "message": f"User verification {'enabled' if target_user.verified else 'disabled'}"
-    }
-
-
-@router.get("/user/check-similarity/{user_id}")
-async def check_user_similarity(
-    user_id: int,
-    current_user: User = Depends(get_current_user_allow_suspended),
-    db: Session = Depends(get_db)
-):
-    """
-    Check if a user is similar to any verified user
-    """
-    target_user = db.query(User).filter(User.id == user_id).first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get all verified users
-    verified_users = db.query(User).filter(User.verified == True).all()
-    verified_users_data = [
-        {"username": user.username, "display_name": user.display_name}
-        for user in verified_users
-    ]
-    
-    # Check similarity
-    is_similar, similar_to = is_user_similar_to_verified(
-        target_user.username,
-        target_user.display_name,
-        verified_users_data
-    )
-    
-    return {
-        "isSimilar": is_similar,
-        "similarTo": similar_to if is_similar else None
     }
 
 

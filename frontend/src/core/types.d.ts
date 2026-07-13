@@ -39,6 +39,8 @@ export interface Rect extends Size2D {
 
 // App types
 
+export type VerificationStatus = "verified" | "warning" | "blocked" | "none";
+
 /**
  * Chat message structure
  * @interface Message
@@ -70,6 +72,7 @@ export interface Message {
     timestamp: string;
     profile_picture?: string;
     verified?: boolean;
+    verification_status?: VerificationStatus;
     reply_to?: Message;
     files?: Attachment[];
     reactions?: Reaction[];
@@ -118,6 +121,7 @@ export interface User {
     bio?: string;
     profile_picture: string;
     verified?: boolean;
+    verification_status?: VerificationStatus;
     suspended?: boolean;
     suspension_reason?: string | null;
     deleted?: boolean;
@@ -144,6 +148,9 @@ export interface UserProfile {
     last_seen: string;
     created_at: string;
     verified?: boolean;
+    verification_status?: VerificationStatus;
+    deleted?: boolean;
+    suspended?: boolean;
 }
 
 // ----------

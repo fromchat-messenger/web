@@ -11,6 +11,7 @@ from ..routes.messaging import (
     MessaggingSocketManager,
     _send_message_internal,
     _edit_message_internal,
+    _mark_dm_conversation_read,
     get_messages,
     edit_message,
     delete_message,
@@ -26,6 +27,7 @@ from ..models import (
     DMReactionRequest,
     UpdateLog,
 )
+from ..routes.profile import build_profile_update_payload
 from ..security.audit import log_access, log_dm
 
 logger = logging.getLogger("uvicorn.error")
@@ -110,15 +112,13 @@ async def getUpdates(manager: MessaggingSocketManager, websocket: WebSocket, db:
 @websocket_handler("ping", authRequired=True)
 async def ping(manager: MessaggingSocketManager, websocket: WebSocket, db: Session, user: User, data: dict) -> dict | None:
     """Handle ping - authenticate and set user online."""
-    # Set user online in DB
-    user.online = True
-    user.last_seen = datetime.now()
-    db.commit()
-    # Add to online users
-    manager.online_users.add(user.id)
-    # Broadcast status change
-    await manager.broadcast_status_change(user.id, True, user.last_seen.isoformat(), db)
-    
+    became_online = presence_service.register_connection(user.id, websocket)
+    presence_service.touch(user.id)
+    if became_online:
+        _, last_seen = presence_service.get_presence(user.id)
+        last_seen_iso = last_seen.isoformat() if last_seen else datetime.now().isoformat()
+        await manager.broadcast_status_change(user.id, True, last_seen_iso, db)
+
     log(manager, websocket, user, "ping")
     return {"status": "success"}
 
@@ -138,10 +138,6 @@ async def sendMessage(manager: MessaggingSocketManager, websocket: WebSocket, db
     
     # Call internal function directly (rate limiting is handled at infrastructure level via Caddy)
     response = await _send_message_internal(message_request, user, db, [])
-    await manager.broadcast({
-        "type": "newMessage",
-        "data": response["message"]
-    }, db)
     
     log(manager, websocket, user, "sendMessage", message_id=response["message"]["id"])
     return response
@@ -340,6 +336,32 @@ async def dmDelete(manager: MessaggingSocketManager, websocket: WebSocket, db: S
         username=user.username,
         recipient_id=env.recipient_id,
     )
+
+    return {"status": "ok", "id": env_id}
+
+
+@websocket_handler("dmMarkRead", authRequired=True)
+async def dmMarkRead(manager: MessaggingSocketManager, websocket: WebSocket, db: Session, user: User, data: dict) -> dict | None:
+    """Mark DM envelopes up to the given id as read for the current user."""
+    envelope_id = int(data["id"])
+    env: DMEnvelope | None = db.query(DMEnvelope).filter(DMEnvelope.id == envelope_id).first()
+    if not env:
+        raise HTTPException(status_code=404, detail="DM not found")
+    if env.sender_id != user.id and env.recipient_id != user.id:
+        raise HTTPException(status_code=403, detail="Not a participant in this conversation")
+
+    other_user_id = env.recipient_id if env.sender_id == user.id else env.sender_id
+    last_read = _mark_dm_conversation_read(
+        db,
+        user.id,
+        other_user_id,
+        up_to_envelope_id=envelope_id,
+    )
+    db.commit()
+
+    log(manager, websocket, user, "dmMarkRead", dm_envelope_id=envelope_id, other_user_id=other_user_id)
+    return {"status": "ok", "lastReadEnvelopeId": last_read}
+
     
     return {"status": "ok", "id": env_id}
 
@@ -475,25 +497,38 @@ async def call_screen_share_toggle(manager: MessaggingSocketManager, websocket: 
 async def subscribeStatus(manager: MessaggingSocketManager, websocket: WebSocket, db: Session, user: User, data: dict) -> dict | None:
     """Subscribe to status updates for a user."""
     user_id_to_subscribe = int(data["userId"])
-    manager.ws_subscriptions[websocket].add(user_id_to_subscribe)
-    
-    # Get current status of the user
+    manager.ws_subscriptions.setdefault(websocket, set()).add(user_id_to_subscribe)
+
     target_user = db.query(User).filter(User.id == user_id_to_subscribe).first()
-    if target_user:
-        # Send current status directly (not through return value)
-        await websocket.send_json({
-            "type": "statusUpdate",
-            "data": {
-                "userId": user_id_to_subscribe,
-                "online": target_user.online,
-                "lastSeen": target_user.last_seen.isoformat() if target_user.last_seen else None
-            }
-        })
-        log(manager, websocket, user, "subscribeStatus", target_user_id=user_id_to_subscribe)
-        return {"status": "ok"}
-    else:
+    if not target_user:
         log(manager, websocket, user, "subscribeStatus_error", target_user_id=user_id_to_subscribe, error="User not found")
         raise HTTPException(status_code=404, detail="User not found")
+
+    online, last_seen = presence_service.get_presence(user_id_to_subscribe)
+    await websocket.send_json({
+        "type": "statusUpdate",
+        "data": {
+            "userId": user_id_to_subscribe,
+            "online": online,
+            "lastSeen": last_seen.isoformat() if last_seen else None,
+        },
+    })
+
+    try:
+        profile_payload = build_profile_update_payload(target_user, user.id, db)
+        await websocket.send_json({
+            "type": "profileUpdate",
+            "data": profile_payload,
+        })
+    except Exception:
+        logger.exception(
+            "subscribeStatus profile snapshot failed subscriber=%s target=%s",
+            user.id,
+            user_id_to_subscribe,
+        )
+
+    log(manager, websocket, user, "subscribeStatus", target_user_id=user_id_to_subscribe)
+    return {"status": "ok"}
 
 
 @websocket_handler("unsubscribeStatus", authRequired=True)

@@ -1,4 +1,5 @@
 import { MaterialIcon } from "@/utils/material";
+import { Link } from "react-router-dom";
 import styles from "./download-app.module.scss";
 
 export default function DownloadAppPage() {
@@ -20,6 +21,11 @@ export default function DownloadAppPage() {
                         iOS
                     </a>
                 </div>
+                <p>
+                    <Link to="/privacy">Политика конфиденциальности</Link>
+                    {" · "}
+                    <Link to="/terms">Пользовательское соглашение</Link>
+                </p>
                 <p>
                     <a href="https://t.me/denis0001-dev">Написать в поддержку</a>
                 </p>

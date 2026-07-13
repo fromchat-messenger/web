@@ -15,6 +15,8 @@ import { delay } from "./utils/utils";
 const HomePage = lazy(() => import("./pages/home/HomePage"));
 const AuthPage = lazy(() => import("./pages/auth/AuthPage"));
 const ChatPage = lazy(() => import("./pages/chat/ui/ChatPage"));
+const PrivacyPage = lazy(() => import("./pages/legal/LegalPages").then(m => ({ default: m.PrivacyPage })));
+const TermsPage = lazy(() => import("./pages/legal/LegalPages").then(m => ({ default: m.TermsPage })));
 
 const routeConfig: RouteObject[] = [
     { path: "/", element: <HomePage /> },
@@ -22,6 +24,8 @@ const routeConfig: RouteObject[] = [
     { path: "/login", element: <Navigate to="/auth?mode=login" replace /> },
     { path: "/register", element: <Navigate to="/auth?mode=register" replace /> },
     { path: "/download-app", element: <DownloadAppPage /> },
+    { path: "/privacy", element: <PrivacyPage /> },
+    { path: "/terms", element: <TermsPage /> },
     {
         path: "/chat",
         element: (

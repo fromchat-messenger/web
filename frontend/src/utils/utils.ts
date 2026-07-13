@@ -6,19 +6,35 @@
  */
 
 /**
- * Formats a timestamp string to HH:MM format
+ * Parses API timestamps into a Date in the user's local timezone.
+ * Zone-less ISO strings from the server are treated as UTC (append Z),
+ * matching Android's parseMessageInstant behavior.
+ */
+export function parseApiTimestamp(dateString: string): Date {
+    const raw = dateString.trim();
+    if (!raw) return new Date(NaN);
+    const normalized = raw.includes(" ") ? raw.replace(" ", "T") : raw;
+    const hasOffset =
+        /[zZ]$/.test(normalized) ||
+        /[+-]\d{2}:?\d{2}$/.test(normalized);
+    return new Date(hasOffset ? normalized : `${normalized}Z`);
+}
+
+/**
+ * Formats a timestamp string to HH:MM in the user's local timezone.
  * @param {string} dateString - ISO timestamp string to format
  * @returns {string} Formatted time string in HH:MM format
  * @example
- * formatTime('2024-01-15T14:30:00Z'); // Returns "14:30"
+ * formatTime('2024-01-15T14:30:00Z'); // Returns local "17:30" in UTC+3
  */
 export function formatTime(dateString: string): string {
-    const date = new Date(dateString);
-    let hours = date.getHours();
-    let minutes = date.getMinutes();
-    const hoursString = hours < 10 ? '0' + hours : hours;
-    const minutesString = minutes < 10 ? '0' + minutes : minutes;
-    return hoursString + ':' + minutesString;
+    const date = parseApiTimestamp(dateString);
+    if (Number.isNaN(date.getTime())) return "";
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const hoursString = hours < 10 ? "0" + hours : String(hours);
+    const minutesString = minutes < 10 ? "0" + minutes : String(minutes);
+    return hoursString + ":" + minutesString;
 }
 
 /**

@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any
 import os
 import logging
 import json
+from pathlib import Path
 
 import httpx
 from fastapi import HTTPException, status
@@ -636,6 +637,172 @@ async def get_resumable_upload_data_in_storage(
         r = await client.get(url, headers={"X-User-ID": str(user_id)})
         r.raise_for_status()
         return r.json()
+
+
+async def store_normal_file_from_path_in_storage(
+    stored_name: str,
+    source_path: str | Path,
+    timeout: float = 120.0,
+) -> Dict[str, Any]:
+    """Persist a plain public-chat attachment where file downloads are served from."""
+    mod = _get_file_storage_module()
+    src = Path(source_path)
+    if mod:
+        try:
+            return await mod.store_normal_file_from_path_internal(stored_name, src)
+        except Exception as e:
+            logger.error("In-process file_storage.store_normal_file_from_path failed: %s", e)
+            raise
+
+    file_storage_url = (
+        os.getenv("FILE_STORAGE_URL")
+        or os.getenv("FILE_STORAGE_SERVICE_URL")
+        or _default_file_storage_base_url()
+    )
+    url = f"{file_storage_url.rstrip('/')}/uploads/files/normal/store"
+    import httpx
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        with open(src, "rb") as file_handle:
+            r = await client.post(
+                url,
+                data={"stored_name": stored_name},
+                files={"file": (Path(stored_name).name, file_handle, "application/octet-stream")},
+            )
+        r.raise_for_status()
+        return r.json()
+
+
+async def store_public_thumb_in_storage(
+    stored_name: str,
+    jpeg_bytes: bytes,
+    *,
+    width: int,
+    height: int,
+    file_size: int,
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    """Persist a public-chat thumbnail under file_storage THUMBS_DIR."""
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.store_public_thumb_internal(
+                stored_name,
+                jpeg_bytes,
+                width=width,
+                height=height,
+                file_size=file_size,
+            )
+        except Exception as e:
+            logger.error("In-process file_storage.store_public_thumb failed: %s", e)
+            raise
+
+    file_storage_url = (
+        os.getenv("FILE_STORAGE_URL")
+        or os.getenv("FILE_STORAGE_SERVICE_URL")
+        or _default_file_storage_base_url()
+    )
+    url = f"{file_storage_url.rstrip('/')}/uploads/files/thumbs/store"
+    import httpx
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(
+            url,
+            data={
+                "stored_name": stored_name,
+                "width": str(width),
+                "height": str(height),
+                "file_size": str(file_size),
+            },
+            files={"file": (f"{Path(stored_name).stem}.jpg", jpeg_bytes, "image/jpeg")},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+async def store_public_image_dimensions_in_storage(
+    stored_name: str,
+    *,
+    width: int,
+    height: int,
+    file_size: int,
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    """Persist image dimensions for large public attachments (no JPEG thumbnail)."""
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return await mod.store_public_image_dimensions_internal(
+                stored_name,
+                width=width,
+                height=height,
+                file_size=file_size,
+            )
+        except Exception as e:
+            logger.error("In-process file_storage.store_public_image_dimensions failed: %s", e)
+            raise
+
+    file_storage_url = (
+        os.getenv("FILE_STORAGE_URL")
+        or os.getenv("FILE_STORAGE_SERVICE_URL")
+        or _default_file_storage_base_url()
+    )
+    url = f"{file_storage_url.rstrip('/')}/uploads/files/thumbs/dimensions"
+    import httpx
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(
+            url,
+            data={
+                "stored_name": stored_name,
+                "width": str(width),
+                "height": str(height),
+                "file_size": str(file_size),
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+async def get_public_thumb_meta_in_storage(
+    stored_name: str,
+    timeout: float = 10.0,
+) -> Dict[str, Any] | None:
+    """Load thumbnail base64 + dimensions for a normal attachment basename."""
+    mod = _get_file_storage_module()
+    if mod:
+        try:
+            return mod.get_public_thumb_meta_internal(stored_name)
+        except Exception as e:
+            logger.error("In-process file_storage.get_public_thumb_meta failed: %s", e)
+            return None
+
+    file_storage_url = (
+        os.getenv("FILE_STORAGE_URL")
+        or os.getenv("FILE_STORAGE_SERVICE_URL")
+        or _default_file_storage_base_url()
+    )
+    stem = Path(stored_name).stem
+    url = f"{file_storage_url.rstrip('/')}/uploads/files/thumbs/{stem}.jpg"
+    import base64
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.get(url)
+            if r.status_code != 200:
+                return None
+            return {
+                "stored_name": Path(stored_name).name,
+                "width": 1,
+                "height": 1,
+                "file_size": 0,
+                "thumbnail_b64": base64.b64encode(r.content).decode("ascii"),
+                "thumb_path": f"/uploads/files/thumbs/{stem}.jpg",
+            }
+    except Exception as e:
+        logger.error("Remote file_storage.get_public_thumb_meta failed: %s", e)
+        return None
 
 
 async def delete_resumable_upload_in_storage(

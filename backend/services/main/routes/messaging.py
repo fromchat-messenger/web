@@ -11,15 +11,23 @@ import unicodedata
 from collections import defaultdict, deque
 from difflib import SequenceMatcher
 from typing import Any
+import json
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Request, status
 from sqlalchemy.orm import Session
 from ..dependencies import get_current_user, get_current_user_allow_suspended, get_db
-from .account import convert_user
+from .account import convert_user_for_dm_conversation
+from ..deleted_user import deleted_username_for, is_deleted_user, is_suspended_user
 from ..constants import OWNER_USERNAME
-from ..models import Message, SendMessageRequest, EditMessageRequest, User, DMEnvelope, MessageFile, DMFile, Reaction, ReactionRequest, ReactionResponse, DMReaction, DMReactionRequest, DMReactionResponse, UpdateLog, MessageEditHistory, MessageEditHistoryResponse
+from ..models import Message, SendMessageRequest, EditMessageRequest, User, DMEnvelope, DmConversationPreference, MessageFile, DMFile, Reaction, ReactionRequest, ReactionResponse, DMReaction, DMReactionRequest, DMReactionResponse, UpdateLog, MessageEditHistory, MessageEditHistoryResponse
+from ..presence_service import presence_service
 from ..push_service import push_service
-from PIL import Image
+from ..public_image_dimensions import (
+    is_placeholder_dimensions,
+    read_image_dimensions_from_bytes,
+    read_image_dimensions_from_path,
+)
+from PIL import Image, ImageOps
 import io
 import json
 from pydantic import BaseModel
@@ -27,6 +35,11 @@ from better_profanity import profanity as _bp
 from ..security.audit import log_access, log_dm, log_public_chat, log_security
 from ..security.profanity import contains_profanity
 from ..security.rate_limit import rate_limit_per_ip
+from ..verification_service import (
+    VerificationStatus,
+    compute_verification_status,
+    get_verified_users_data,
+)
 from ..websocket.utils import authenticate_user
 
 from ..models import FcmToken
@@ -37,12 +50,123 @@ logger = logging.getLogger("uvicorn.error")
 
 MAX_TOTAL_SIZE = 4 * 1024 * 1024 * 1024  # 4 GB
 
+# region agent log
+_DEBUG_LOG_PATH = Path("/Volumes/Data/Projects/Programming/FromChat/Android/.cursor/debug-72e992.log")
+
+
+def _agent_debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    """
+    Append a structured NDJSON log line for pagination debugging.
+    Never raises: logging must not affect request handling.
+    """
+    try:
+        payload = {
+            "sessionId": "72e992",
+            "runId": "backend-pagination",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        _DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        # Swallow all errors – debug-only path.
+        pass
+
+# endregion agent log
+
+# Legacy local fallback only — canonical public attachments live in file_storage:
+# files/data/uploads/files/normal/{name} (served via /api/uploads/files/normal/...).
 FILES_BASE_DIR = Path("data/uploads/files")
 FILES_NORMAL_DIR = FILES_BASE_DIR / "normal"
 FILES_ENCRYPTED_DIR = FILES_BASE_DIR / "encrypted"
 
 os.makedirs(FILES_NORMAL_DIR, exist_ok=True)
 os.makedirs(FILES_ENCRYPTED_DIR, exist_ok=True)
+
+_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+_THUMB_SIZE = 80
+_LARGE_FILE_THUMB_BYTES = 32 * 1024 * 1024
+
+
+def _generate_public_thumbnail(image_bytes: bytes) -> tuple[bytes | None, list[int]]:
+    """Tiny JPEG thumbnail for public chat. Returns (jpeg_bytes, [w, h]) or (None, [1, 1])."""
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes)))
+        img = img.convert("RGB")
+        if hasattr(img, "info") and img.info:
+            img.info.pop("icc_profile", None)
+        w, h = img.size
+        aspect_wh = [w, h]
+        if w > _THUMB_SIZE or h > _THUMB_SIZE:
+            scale = min(_THUMB_SIZE / w, _THUMB_SIZE / h)
+            new_w = max(1, int(w * scale))
+            new_h = max(1, int(h * scale))
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        return buf.getvalue(), aspect_wh
+    except Exception as e:
+        logger.warning("PUBLIC THUMB: Generation failed: %s", e)
+        return None, [1, 1]
+
+
+def _resolve_public_file_media(mod, stored_name: str, original_name: str) -> tuple[str, list[int], int]:
+    """Return (thumbnail_b64, [width, height], file_size). Never emits placeholder [1, 1]."""
+    thumb_b64 = ""
+    size = 0
+    dimensions: list[int] | None = None
+
+    if mod is not None:
+        try:
+            meta = mod.get_public_thumb_meta_internal(stored_name)
+        except Exception as error:
+            logger.warning("PUBLIC THUMB: meta load failed for %s: %s", stored_name, error)
+            meta = None
+        if meta:
+            thumb_b64 = str(meta.get("thumbnail_b64") or "")
+            size = int(meta.get("file_size") or 0)
+
+        path = mod.get_normal_file_path_internal(stored_name)
+        if path is not None:
+            fresh = mod.read_image_dimensions_from_path(path)
+            if fresh is not None and not is_placeholder_dimensions(fresh[0], fresh[1]):
+                dimensions = fresh
+            if size <= 0:
+                size = int(path.stat().st_size)
+
+    if dimensions is None and Path(original_name).suffix.lower() in _IMAGE_EXTENSIONS:
+        logger.error("PUBLIC THUMB: could not resolve dimensions for %s", stored_name)
+
+    if dimensions is None:
+        dimensions = [1, 1]
+
+    return thumb_b64, dimensions, size
+
+
+def _public_attachment_media_fields_sync(msg: Message) -> dict:
+    """Build fileThumbnails / fileAspectRatios / fileSizes for public messages."""
+    files = list(msg.files or [])
+    if not files:
+        return {}
+    mod = service_calls._get_file_storage_module()
+    thumbnails: list[str] = []
+    aspect_ratios: list[list[int]] = []
+    sizes: list[int] = []
+    for f in files:
+        stored_name = Path(f.path).name
+        thumb_b64, dimensions, size = _resolve_public_file_media(mod, stored_name, f.name)
+        thumbnails.append(thumb_b64)
+        aspect_ratios.append(dimensions)
+        sizes.append(size)
+    return {
+        "fileThumbnails": thumbnails,
+        "fileAspectRatios": aspect_ratios,
+        "fileSizes": sizes,
+    }
 
 
 def _get_file_storage_url() -> str:
@@ -191,7 +315,11 @@ def _monitor_public_message_activity(user: User, content: str, message_id: int, 
         )
 
 
-def convert_message(msg: Message) -> dict:
+def convert_message(
+    msg: Message,
+    verified_users_data: list[dict[str, str]] | None = None,
+) -> dict:
+    vdata = verified_users_data or []
     # Group reactions by emoji
     reactions_dict = {}
     if msg.reactions:
@@ -209,15 +337,22 @@ def convert_message(msg: Message) -> dict:
                 "username": reaction.user.display_name
             })
 
-    # Handle deleted or suspended users
-    if msg.author.deleted or msg.author.suspended:
-        username = f"Deleted User #{msg.author.id}"
+    # Handle deleted or suspended authors
+    if is_deleted_user(msg.author):
+        username = deleted_username_for(msg.author.id)
         profile_picture = None
         verified = False
+        verification_status = VerificationStatus.NONE.value
+    elif is_suspended_user(msg.author):
+        username = msg.author.display_name
+        profile_picture = msg.author.profile_picture
+        verified = False
+        verification_status = VerificationStatus.BLOCKED.value
     else:
         username = msg.author.display_name
         profile_picture = msg.author.profile_picture
         verified = msg.author.verified
+        verification_status = compute_verification_status(msg.author, vdata).value
 
     return {
         "id": msg.id,
@@ -229,7 +364,8 @@ def convert_message(msg: Message) -> dict:
         "username": username,
         "profile_picture": profile_picture,
         "verified": verified,
-        "reply_to": convert_message(msg.reply_to) if msg.reply_to else None,
+        "verification_status": verification_status,
+        "reply_to": convert_message(msg.reply_to, verified_users_data) if msg.reply_to else None,
         "reactions": list(reactions_dict.values()),
         "files": [
             {
@@ -239,8 +375,30 @@ def convert_message(msg: Message) -> dict:
                 "message_id": f.message_id
             }
             for f in (msg.files or [])
-        ]
+        ],
+        **_public_attachment_media_fields_sync(msg),
     }
+
+
+def convert_message_for_user(
+    msg: Message,
+    viewer_user_id: int | None,
+    *,
+    sender_client_message_id: str | None = None,
+    verified_users_data: list[dict[str, str]] | None = None,
+) -> dict:
+    """
+    Per-user public chat payload. [sender_client_message_id] is included only for the sender
+    so clients can match optimistic rows to the server ack; never exposed to other viewers.
+    """
+    payload = convert_message(msg, verified_users_data)
+    if (
+        sender_client_message_id
+        and viewer_user_id is not None
+        and viewer_user_id == msg.user_id
+    ):
+        payload["client_message_id"] = sender_client_message_id
+    return payload
 
 
 def convert_dm_envelope(db: Session, envelope: DMEnvelope, user_id: int | None = None) -> dict:
@@ -263,12 +421,25 @@ def convert_dm_envelope(db: Session, envelope: DMEnvelope, user_id: int | None =
 
     # Get sender info for verified status
     sender = db.query(User).filter(User.id == envelope.sender_id).first()
+    verified_users_data = get_verified_users_data(db)
 
-    # Handle deleted or suspended users
-    if sender and (sender.deleted or sender.suspended):
+    # Handle deleted or suspended senders
+    if sender and is_deleted_user(sender):
         sender_verified = False
+        verification_status = VerificationStatus.NONE.value
+        sender_username = deleted_username_for(sender.id)
+    elif sender and is_suspended_user(sender):
+        sender_verified = False
+        verification_status = VerificationStatus.BLOCKED.value
+        sender_username = sender.display_name or sender.username
     else:
         sender_verified = sender.verified if sender else False
+        verification_status = (
+            compute_verification_status(sender, verified_users_data).value
+            if sender
+            else VerificationStatus.NONE.value
+        )
+        sender_username = sender.username if sender else f"user_{envelope.sender_id}"
 
     # Return only the MEK wrapped with the requesting user's key
     if user_id == envelope.sender_id:
@@ -286,12 +457,13 @@ def convert_dm_envelope(db: Session, envelope: DMEnvelope, user_id: int | None =
         "id": envelope.id,
         "senderId": envelope.sender_id,
         "recipientId": envelope.recipient_id,
-        "sender_username": sender.username if sender else f"user_{envelope.sender_id}",
+        "sender_username": sender_username,
         "iv_b64": envelope.iv_b64,
         "ciphertext_b64": envelope.ciphertext_b64,
         "wrapped_mek_b64": wrapped_mek_b64,
         "timestamp": envelope.timestamp.isoformat(),
         "verified": sender_verified,
+        "verification_status": verification_status,
         "reactions": list(reactions_dict.values()),
         "files": []
     }
@@ -312,6 +484,32 @@ def convert_dm_envelope(db: Session, envelope: DMEnvelope, user_id: int | None =
         )
 
     return result
+
+
+def convert_dm_envelope_for_conversation_preview(
+    db: Session,
+    envelope: DMEnvelope,
+    user_id: int | None = None,
+) -> dict:
+    """Minimal last-message payload for DM conversation list previews."""
+    if user_id == envelope.sender_id:
+        wrapped_mek_b64 = envelope.sender_wrapped_mek_b64
+    elif user_id == envelope.recipient_id:
+        wrapped_mek_b64 = envelope.recipient_wrapped_mek_b64
+    elif user_id == 1:
+        wrapped_mek_b64 = envelope.compliance_wrapped_mek_b64
+    else:
+        wrapped_mek_b64 = None
+
+    return {
+        "id": envelope.id,
+        "senderId": envelope.sender_id,
+        "recipientId": envelope.recipient_id,
+        "iv_b64": envelope.iv_b64,
+        "ciphertext_b64": envelope.ciphertext_b64,
+        "wrapped_mek_b64": wrapped_mek_b64,
+        "timestamp": envelope.timestamp.isoformat(),
+    }
 
 
 def convert_dm_envelope_for_user(
@@ -335,6 +533,287 @@ def convert_dm_envelope_for_user(
     return payload
 
 
+class PublicInitResumableUploadRequest(BaseModel):
+    filename: str
+    total_size: int
+    chunk_size: int | None = None
+
+
+class PublicUploadChunkRequest(BaseModel):
+    offset: int
+    data_b64: str
+
+
+@router.post("/public/upload/init")
+async def init_public_resumable_upload(
+    request: PublicInitResumableUploadRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if request.total_size <= 0:
+        raise HTTPException(status_code=400, detail="total_size must be > 0")
+
+    return await service_calls.init_resumable_upload_in_storage(
+        filename=request.filename,
+        total_size=request.total_size,
+        allowed_user_ids=[current_user.id],
+        chunk_size=request.chunk_size,
+    )
+
+
+@router.get("/public/upload/{upload_id}")
+async def get_public_resumable_upload_status(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    return await service_calls.get_resumable_upload_status_in_storage(upload_id, current_user.id)
+
+
+@router.patch("/public/upload/{upload_id}")
+async def upload_public_resumable_chunk(
+    upload_id: str,
+    request: PublicUploadChunkRequest,
+    current_user: User = Depends(get_current_user),
+):
+    return await service_calls.upload_resumable_chunk_in_storage(
+        upload_id=upload_id,
+        user_id=current_user.id,
+        offset=request.offset,
+        data_b64=request.data_b64,
+    )
+
+
+@router.post("/public/upload/{upload_id}/complete")
+async def complete_public_resumable_upload(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    return await service_calls.complete_resumable_upload_in_storage(upload_id, current_user.id)
+
+
+@router.delete("/public/upload/{upload_id}")
+async def delete_public_resumable_upload(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    return await service_calls.delete_resumable_upload_in_storage(upload_id, current_user.id)
+
+
+def _optimize_image_bytes_if_possible(content: bytes, original_name: str) -> bytes:
+    ext = Path(original_name).suffix.lower()
+    try:
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(content)))
+        img_format = image.format or ("PNG" if ext == ".png" else "JPEG")
+        buf = io.BytesIO()
+        save_kwargs = {"optimize": True}
+        if img_format.upper() == "JPEG":
+            save_kwargs["quality"] = 95
+        image.save(buf, format=img_format, **save_kwargs)
+        buf.seek(0)
+        return buf.read()
+    except Exception:
+        return content
+
+
+def _read_image_dimensions(
+    *,
+    content: bytes | None = None,
+    source_path: Path | None = None,
+    original_name: str = "",
+) -> list[int]:
+    """Read pixel size without decoding full multi-hundred-MP payloads when possible."""
+    try:
+        if source_path is not None:
+            dimensions = read_image_dimensions_from_path(source_path)
+            if dimensions is not None:
+                return dimensions
+        if content is not None:
+            dimensions = read_image_dimensions_from_bytes(content, Path(original_name).suffix)
+            if dimensions is not None:
+                return dimensions
+    except Exception as error:
+        logger.warning("PUBLIC THUMB: dimension read failed: %s", error)
+    return [1, 1]
+
+
+async def _maybe_store_public_thumbnail(
+    stored_name: str,
+    original_name: str,
+    *,
+    content: bytes | None = None,
+    source_path: Path | None = None,
+    file_size: int,
+) -> None:
+    """Generate and store a thumbnail under file_storage THUMBS_DIR when possible."""
+    if Path(original_name).suffix.lower() not in _IMAGE_EXTENSIONS:
+        return
+    if file_size <= 0:
+        return
+    try:
+        wh = _read_image_dimensions(
+            content=content,
+            source_path=source_path,
+            original_name=original_name,
+        )
+        if is_placeholder_dimensions(wh[0], wh[1]):
+            logger.warning("PUBLIC THUMB: skipping meta for %s — dimensions unknown", stored_name)
+            return
+        if file_size > _LARGE_FILE_THUMB_BYTES:
+            await service_calls.store_public_image_dimensions_in_storage(
+                stored_name,
+                width=wh[0],
+                height=wh[1],
+                file_size=file_size,
+            )
+            return
+        if content is not None:
+            image_bytes = content
+        elif source_path is not None:
+            image_bytes = Path(source_path).read_bytes()
+        else:
+            return
+        jpeg, thumb_wh = _generate_public_thumbnail(image_bytes)
+        if not jpeg:
+            await service_calls.store_public_image_dimensions_in_storage(
+                stored_name,
+                width=wh[0],
+                height=wh[1],
+                file_size=file_size,
+            )
+            return
+        await service_calls.store_public_thumb_in_storage(
+            stored_name,
+            jpeg,
+            width=thumb_wh[0],
+            height=thumb_wh[1],
+            file_size=file_size,
+        )
+    except Exception as error:
+        logger.warning("PUBLIC THUMB: store failed for %s: %s", stored_name, error)
+
+
+async def _store_public_normal_attachment(
+    message_id: int,
+    original_name: str,
+    *,
+    content: bytes | None = None,
+    source_path: Path | None = None,
+) -> MessageFile:
+    """Write a public attachment to file_storage so download proxy can serve it."""
+    import tempfile
+
+    ext = Path(original_name).suffix.lower()
+    uid = uuid.uuid4().hex
+    safe_name = f"{message_id}_{uid}{ext or ''}"
+
+    if content is not None:
+        payload = _optimize_image_bytes_if_possible(content, original_name)
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(payload)
+            tmp_path = Path(tmp.name)
+        try:
+            stored = await service_calls.store_normal_file_from_path_in_storage(safe_name, tmp_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        file_size = int(stored.get("size") or len(payload))
+        await _maybe_store_public_thumbnail(
+            safe_name,
+            original_name,
+            content=payload,
+            file_size=file_size,
+        )
+    elif source_path is not None:
+        src = Path(source_path)
+        if not src.is_file():
+            raise HTTPException(status_code=404, detail="Upload payload not found")
+        src_size = int(src.stat().st_size)
+        # Avoid loading huge non-image blobs into memory just to recompress.
+        if (
+            Path(original_name).suffix.lower() in _IMAGE_EXTENSIONS
+            and src_size <= _LARGE_FILE_THUMB_BYTES
+        ):
+            payload = _optimize_image_bytes_if_possible(src.read_bytes(), original_name)
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(payload)
+                tmp_path = Path(tmp.name)
+            try:
+                stored = await service_calls.store_normal_file_from_path_in_storage(safe_name, tmp_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            file_size = int(stored.get("size") or len(payload))
+            await _maybe_store_public_thumbnail(
+                safe_name,
+                original_name,
+                content=payload,
+                file_size=file_size,
+            )
+        else:
+            stored = await service_calls.store_normal_file_from_path_in_storage(safe_name, src)
+            file_size = int(stored.get("size") or src_size)
+            mod = service_calls._get_file_storage_module()
+            dimension_path = (
+                mod.get_normal_file_path_internal(safe_name)
+                if mod is not None
+                else src
+            )
+            await _maybe_store_public_thumbnail(
+                safe_name,
+                original_name,
+                source_path=dimension_path,
+                file_size=file_size,
+            )
+    else:
+        raise HTTPException(status_code=500, detail="Attachment payload missing")
+
+    # Canonical path matches file_storage layout so clients/proxies resolve by basename.
+    stored_path = str(stored.get("path") or f"/uploads/files/normal/{safe_name}")
+    return MessageFile(
+        message_id=message_id,
+        name=original_name,
+        path=stored_path,
+    )
+
+
+async def _attach_resumable_uploads_to_message(
+    message: Message,
+    upload_ids: list[str],
+    current_user: User,
+    db: Session,
+) -> None:
+    if not upload_ids:
+        return
+
+    total_size = 0
+    payloads: list[dict] = []
+    for upload_id in upload_ids:
+        uploaded_payload = await service_calls.get_resumable_upload_blob_path_in_storage(
+            upload_id, current_user.id
+        )
+        file_size = int(uploaded_payload.get("file_size", 0))
+        total_size += file_size
+        payloads.append(uploaded_payload)
+        if total_size > MAX_TOTAL_SIZE:
+            raise HTTPException(status_code=400, detail="Total attachments size exceeds 4GB")
+
+    for upload_id, uploaded_payload in zip(upload_ids, payloads):
+        source_path = Path(uploaded_payload["encrypted_file_path"])
+        original_name = Path(uploaded_payload.get("filename", "file")).name
+        mf = await _store_public_normal_attachment(
+            message.id,
+            original_name,
+            source_path=source_path,
+        )
+        db.add(mf)
+
+    db.commit()
+    db.refresh(message)
+
+    for upload_id in upload_ids:
+        try:
+            await service_calls.delete_resumable_upload_in_storage(upload_id, current_user.id)
+        except Exception as cleanup_error:
+            logger.warning("Failed to cleanup resumable upload %s: %s", upload_id, cleanup_error)
+
+
 async def _send_message_internal(
     message_request: SendMessageRequest,
     current_user: User,
@@ -352,8 +831,13 @@ async def _send_message_internal(
             raise HTTPException(status_code=404, detail="Original message not found")
 
     raw_content = message_request.content.strip()
+    uploaded_file_ids = [
+        uid.strip()
+        for uid in (message_request.uploaded_file_ids or [])
+        if uid and uid.strip()
+    ]
 
-    if not raw_content and not files:
+    if not raw_content and not files and not uploaded_file_ids:
         raise HTTPException(
             status_code=400,
             detail="No content provided"
@@ -402,44 +886,31 @@ async def _send_message_internal(
                 raise HTTPException(status_code=400, detail="Total attachments size exceeds 4GB")
 
         for up in files:
-            # Sanitize filename
             original_name = Path(up.filename or "file").name
-            ext = Path(original_name).suffix.lower()
-            uid = uuid.uuid4().hex
-            safe_name = f"{new_message.id}_{uid}{ext or ''}"
-            out_path = FILES_NORMAL_DIR / safe_name
-
             content = await up.read()
             up.file.seek(0)
-
-            # If image, try lossless optimization
-            try:
-                if up.content_type and up.content_type.startswith("image/"):
-                    image = Image.open(io.BytesIO(content))
-                    img_format = image.format or ("PNG" if ext == ".png" else "JPEG")
-                    buf = io.BytesIO()
-                    save_kwargs = {"optimize": True}
-                    if img_format.upper() == "JPEG":
-                        # Use quality=95 with optimize to keep high quality (not truly lossless but near)
-                        save_kwargs["quality"] = 95
-                    image.save(buf, format=img_format, **save_kwargs)
-                    buf.seek(0)
-                    content = buf.read()
-            except Exception:
-                # Fallback to original content
-                pass
-
-            with open(out_path, "wb") as f:
-                f.write(content)
-
-            mf = MessageFile(
-                message_id=new_message.id,
-                name=original_name,
-                path=str(out_path)
+            mf = await _store_public_normal_attachment(
+                new_message.id,
+                original_name,
+                content=content,
             )
             db.add(mf)
         db.commit()
         db.refresh(new_message)
+
+    if uploaded_file_ids:
+        await _attach_resumable_uploads_to_message(
+            new_message,
+            uploaded_file_ids,
+            current_user,
+            db,
+        )
+
+    client_message_id = None
+    if message_request.client_message_id:
+        raw_client_id = message_request.client_message_id.strip()
+        if raw_client_id:
+            client_message_id = raw_client_id
 
     # Send push notifications for public messages
     try:
@@ -455,16 +926,22 @@ async def _send_message_internal(
 
     # Realtime broadcast for HTTP uploads as well
     try:
-        await messagingManager.broadcast({
-            "type": "newMessage",
-            "data": convert_message(new_message)
-        }, db)
+        await messagingManager.broadcast_new_message(
+            new_message,
+            db,
+            sender_client_message_id=client_message_id,
+        )
     except Exception:
         pass
 
     _monitor_public_message_activity(current_user, raw_content, new_message.id, db)
 
-    message_payload = convert_message(new_message)
+    message_payload = convert_message_for_user(
+        new_message,
+        current_user.id,
+        sender_client_message_id=client_message_id,
+        verified_users_data=get_verified_users_data(db),
+    )
     
     # Prepare log fields
     log_fields = {
@@ -501,7 +978,14 @@ async def send_message(
             obj = json.loads(payload)
             content = obj.get("content", "")
             reply_to_id = obj.get("reply_to_id", None)
-            message_request = SendMessageRequest(content=content, reply_to_id=reply_to_id)
+            client_message_id = obj.get("client_message_id")
+            uploaded_file_ids = obj.get("uploaded_file_ids")
+            message_request = SendMessageRequest(
+                content=content,
+                reply_to_id=reply_to_id,
+                client_message_id=client_message_id,
+                uploaded_file_ids=uploaded_file_ids,
+            )
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid payload JSON")
 
@@ -628,19 +1112,250 @@ async def push_test(request: Request, current_user: User = Depends(get_current_u
         raise HTTPException(status_code=500, detail="Internal error")
 
 
+MAX_MESSAGE_PAGE_LIMIT = 200
+
+
+def _normalize_page_limit(limit: int | None, *, max_limit: int = MAX_MESSAGE_PAGE_LIMIT) -> int | None:
+    if limit is None:
+        return None
+    return max(1, min(limit, max_limit))
+
+
+def _paginate_rows_by_id(
+    query,
+    id_column,
+    *,
+    limit: int | None = None,
+    before_id: int | None = None,
+    after_id: int | None = None,
+    around_id: int | None = None,
+) -> tuple[list[Any], bool, bool, bool]:
+    """
+    Paginate rows by monotonic id. Always returns rows in ascending id order.
+
+    Returns (rows, has_more, has_more_before, has_more_after).
+    has_more mirrors has_more_before for before/around pages and has_more_after for after pages.
+    """
+    if limit is None:
+        rows = query.order_by(id_column.asc()).all()
+        # region agent log
+        _agent_debug_log(
+            hypothesis_id="H1_after_pagination",
+            location="messaging._paginate_rows_by_id",
+            message="unbounded pagination",
+            data={
+                "mode": "all",
+                "limit": None,
+                "before_id": before_id,
+                "after_id": after_id,
+                "around_id": around_id,
+                "row_count": len(rows),
+                "min_id": min((getattr(r, "id", None) for r in rows), default=None),
+                "max_id": max((getattr(r, "id", None) for r in rows), default=None),
+            },
+        )
+        # endregion agent log
+        return rows, False, False, False
+
+    if around_id is not None:
+        anchor = query.filter(id_column == around_id).first()
+        if anchor is None:
+            # region agent log
+            _agent_debug_log(
+                hypothesis_id="H2_around_pagination",
+                location="messaging._paginate_rows_by_id",
+                message="around_id anchor missing",
+                data={"limit": limit, "around_id": around_id},
+            )
+            # endregion agent log
+            return [], False, False, False
+
+        half = limit // 2
+        older_count = half
+        newer_count = max(0, limit - half - 1)
+
+        older = (
+            query.filter(id_column < around_id)
+            .order_by(id_column.desc())
+            .limit(older_count)
+            .all()
+        )
+        older.reverse()
+
+        newer = (
+            query.filter(id_column > around_id)
+            .order_by(id_column.asc())
+            .limit(newer_count)
+            .all()
+        )
+
+        rows = older + [anchor] + newer
+        if not rows:
+            return [], False, False, False
+
+        min_id = min(getattr(row, "id") for row in rows)
+        max_id = max(getattr(row, "id") for row in rows)
+        has_more_before = (
+            query.filter(id_column < min_id).limit(1).first() is not None
+        )
+        has_more_after = (
+            query.filter(id_column > max_id).limit(1).first() is not None
+        )
+        # region agent log
+        _agent_debug_log(
+            hypothesis_id="H2_around_pagination",
+            location="messaging._paginate_rows_by_id",
+            message="around_id window",
+            data={
+                "limit": limit,
+                "around_id": around_id,
+                "row_count": len(rows),
+                "min_id": min_id,
+                "max_id": max_id,
+                "has_more_before": has_more_before,
+                "has_more_after": has_more_after,
+            },
+        )
+        # endregion agent log
+        return rows, has_more_before, has_more_before, has_more_after
+
+    if after_id is not None:
+        filtered = query.filter(id_column > after_id)
+        probe = filtered.order_by(id_column.asc()).limit(limit + 1).all()
+        has_more_after = len(probe) > limit
+        rows = probe[:limit]
+        if not rows:
+            # region agent log
+            _agent_debug_log(
+                hypothesis_id="H1_after_pagination",
+                location="messaging._paginate_rows_by_id",
+                message="after_id page empty",
+                data={
+                    "limit": limit,
+                    "after_id": after_id,
+                },
+            )
+            # endregion agent log
+            return [], False, False, False
+        min_id = getattr(rows[0], "id")
+        has_more_before = (
+            query.filter(id_column < min_id).limit(1).first() is not None
+        )
+        # region agent log
+        _agent_debug_log(
+            hypothesis_id="H1_after_pagination",
+            location="messaging._paginate_rows_by_id",
+            message="after_id page",
+            data={
+                "limit": limit,
+                "after_id": after_id,
+                "row_count": len(rows),
+                "first_id": getattr(rows[0], "id", None),
+                "last_id": getattr(rows[-1], "id", None),
+                "has_more_before": has_more_before,
+                "has_more_after": has_more_after,
+            },
+        )
+        # endregion agent log
+        return rows, has_more_after, has_more_before, has_more_after
+
+    filtered = query
+    if before_id is not None and query.filter(id_column == before_id).first() is not None:
+        filtered = query.filter(id_column < before_id)
+
+    probe = filtered.order_by(id_column.desc()).limit(limit + 1).all()
+    has_more_before = len(probe) > limit
+    rows = probe[:limit]
+    rows.reverse()
+    # region agent log
+    _agent_debug_log(
+        hypothesis_id="H3_before_pagination",
+        location="messaging._paginate_rows_by_id",
+        message="before/initial page",
+        data={
+            "limit": limit,
+            "before_id": before_id,
+            "row_count": len(rows),
+            "first_id": getattr(rows[0], "id", None) if rows else None,
+            "last_id": getattr(rows[-1], "id", None) if rows else None,
+            "has_more_before": has_more_before,
+        },
+    )
+    # endregion agent log
+    return rows, has_more_before, has_more_before, False
+
+
+def _message_page_response(
+    messages_data: list[dict],
+    *,
+    has_more: bool,
+    has_more_before: bool,
+    has_more_after: bool,
+    status: str = "success",
+) -> dict:
+    return {
+        "status": status,
+        "messages": messages_data,
+        "has_more": has_more,
+        "has_more_before": has_more_before,
+        "has_more_after": has_more_after,
+    }
+
+
 @router.get("/get_messages")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
-async def get_messages(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
-    messages = db.query(Message).order_by(Message.timestamp.asc()).all()
+async def get_messages(
+    request: Request,
+    limit: int | None = None,
+    before_id: int | None = None,
+    after_id: int | None = None,
+    around_id: int | None = None,
+    current_user: User = Depends(get_current_user_allow_suspended),
+    db: Session = Depends(get_db),
+):
+    page_limit = _normalize_page_limit(limit)
+    # region agent log
+    _agent_debug_log(
+        hypothesis_id="H3_get_messages_params",
+        location="messaging.get_messages",
+        message="incoming get_messages request",
+        data={
+            "client_host": request.client.host if request.client else None,
+            "limit": page_limit,
+            "before_id": before_id,
+            "after_id": after_id,
+            "around_id": around_id,
+            "path": str(request.url.path),
+            "query": str(request.url.query),
+        },
+    )
+    # endregion agent log
+    if sum(x is not None for x in (before_id, after_id, around_id)) > 1:
+        if around_id is not None:
+            before_id = None
+            after_id = None
+        elif before_id is not None and after_id is not None:
+            after_id = None
 
-    messages_data = []
-    for msg in messages:
-        messages_data.append(convert_message(msg))
+    base_query = db.query(Message)
+    rows, has_more, has_more_before, has_more_after = _paginate_rows_by_id(
+        base_query,
+        Message.id,
+        limit=page_limit,
+        before_id=before_id,
+        after_id=after_id,
+        around_id=around_id,
+    )
 
-    return {
-        "status": "success",
-        "messages": messages_data
-    }
+    verified_users_data = get_verified_users_data(db)
+    messages_data = [convert_message(msg, verified_users_data) for msg in rows]
+
+    return _message_page_response(
+        messages_data,
+        has_more=has_more,
+        has_more_before=has_more_before,
+        has_more_after=has_more_after,
+    )
 
 
 class MarkReadRequest(BaseModel):
@@ -654,7 +1369,8 @@ async def get_new_messages(request: Request, current_user: User = Depends(get_cu
     Return unread public messages (Message.is_read == False).
     """
     new_messages = db.query(Message).filter(Message.is_read == False).order_by(Message.timestamp.asc()).all()
-    messages_data = [convert_message(msg) for msg in new_messages]
+    verified_users_data = get_verified_users_data(db)
+    messages_data = [convert_message(msg, verified_users_data) for msg in new_messages]
     return {"status": "success", "messages": messages_data}
 
 
@@ -698,69 +1414,288 @@ async def dm_fetch(request: Request, since: int | None = None, current_user: Use
 
 @router.get("/dm/history/{other_user_id}")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
-async def dm_history(request: Request, other_user_id: int, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
+async def dm_history(
+    request: Request,
+    other_user_id: int,
+    limit: int | None = None,
+    before_id: int | None = None,
+    after_id: int | None = None,
+    around_id: int | None = None,
+    current_user: User = Depends(get_current_user_allow_suspended),
+    db: Session = Depends(get_db),
+):
     if other_user_id <= 0:
         raise HTTPException(status_code=400, detail="Invalid user ID")
-    
+
     if other_user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot get history with yourself")
-    
+
     # Verify other user exists
     other_user = db.query(User).filter(User.id == other_user_id).first()
     if not other_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    envelopes = db.query(DMEnvelope).filter(
-        ((DMEnvelope.sender_id == current_user.id) & (DMEnvelope.recipient_id == other_user_id))
-        | ((DMEnvelope.sender_id == other_user_id) & (DMEnvelope.recipient_id == current_user.id))
-    ).order_by(DMEnvelope.id.asc()).all()
 
-    return {
-        "status": "ok",
-        "messages": [convert_dm_envelope(db, envelope, current_user.id) for envelope in envelopes]
+    page_limit = _normalize_page_limit(limit)
+    if sum(x is not None for x in (before_id, after_id, around_id)) > 1:
+        if around_id is not None:
+            before_id = None
+            after_id = None
+        elif before_id is not None and after_id is not None:
+            after_id = None
+
+    base_query = db.query(DMEnvelope).filter(
+        ((DMEnvelope.sender_id == current_user.id) & (DMEnvelope.recipient_id == other_user_id))
+        | ((DMEnvelope.sender_id == other_user_id) & (DMEnvelope.recipient_id == current_user.id)),
+        DMEnvelope.deleted_at.is_(None),
+    )
+
+    rows, has_more, has_more_before, has_more_after = _paginate_rows_by_id(
+        base_query,
+        DMEnvelope.id,
+        limit=page_limit,
+        before_id=before_id,
+        after_id=after_id,
+        around_id=around_id,
+    )
+
+    messages_data = [
+        convert_dm_envelope(db, envelope, current_user.id) for envelope in rows
+    ]
+
+    return _message_page_response(
+        messages_data,
+        has_more=has_more,
+        has_more_before=has_more_before,
+        has_more_after=has_more_after,
+        status="ok",
+    )
+
+
+def _get_dm_conversation_preference(
+    db: Session,
+    user_id: int,
+    other_user_id: int,
+) -> DmConversationPreference:
+    pref = db.query(DmConversationPreference).filter(
+        DmConversationPreference.user_id == user_id,
+        DmConversationPreference.other_user_id == other_user_id,
+    ).first()
+    if pref is not None:
+        return pref
+    pref = DmConversationPreference(
+        user_id=user_id,
+        other_user_id=other_user_id,
+        archived=False,
+        last_read_envelope_id=0,
+    )
+    db.add(pref)
+    db.flush()
+    return pref
+
+
+def _count_dm_unread(
+    db: Session,
+    user_id: int,
+    other_user_id: int,
+    last_read_envelope_id: int,
+) -> int:
+    return db.query(DMEnvelope).filter(
+        DMEnvelope.sender_id == other_user_id,
+        DMEnvelope.recipient_id == user_id,
+        DMEnvelope.id > last_read_envelope_id,
+        DMEnvelope.deleted_at.is_(None),
+    ).count()
+
+
+def _build_dm_conversation_list(
+    db: Session,
+    current_user: User,
+    *,
+    archived: bool,
+) -> list[dict]:
+    conversations_query = db.query(DMEnvelope).filter(
+        (DMEnvelope.sender_id == current_user.id) | (DMEnvelope.recipient_id == current_user.id),
+        DMEnvelope.deleted_at.is_(None),
+    ).order_by(DMEnvelope.timestamp.desc())
+
+    latest_by_other_user: dict[int, DMEnvelope] = {}
+    for envelope in conversations_query:
+        other_user_id = (
+            envelope.recipient_id
+            if envelope.sender_id == current_user.id
+            else envelope.sender_id
+        )
+        if other_user_id not in latest_by_other_user:
+            latest_by_other_user[other_user_id] = envelope
+
+    prefs = {
+        pref.other_user_id: pref
+        for pref in db.query(DmConversationPreference).filter(
+            DmConversationPreference.user_id == current_user.id,
+        ).all()
     }
+
+    result: list[dict] = []
+    for other_user_id, latest_message in latest_by_other_user.items():
+        pref = prefs.get(other_user_id)
+        is_archived = bool(pref.archived) if pref is not None else False
+        if is_archived != archived:
+            continue
+
+        other_user = db.query(User).filter(User.id == other_user_id).first()
+        if not other_user:
+            continue
+
+        last_read_id = pref.last_read_envelope_id if pref is not None else 0
+        unread_count = _count_dm_unread(db, current_user.id, other_user_id, last_read_id)
+
+        result.append({
+            "user": convert_user_for_dm_conversation(other_user, db),
+            "lastMessage": convert_dm_envelope_for_conversation_preview(
+                db, latest_message, current_user.id
+            ),
+            "unreadCount": unread_count,
+        })
+
+    result.sort(key=lambda x: x["lastMessage"]["timestamp"], reverse=True)
+    return result
 
 
 @router.get("/dm/conversations")
 @rate_limit_per_ip("60/minute")  # Per-IP limit to prevent abuse
 async def get_dm_conversations(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
-    # Get all DM conversations where current user is involved
-    conversations_query = db.query(DMEnvelope).filter(
-        (DMEnvelope.sender_id == current_user.id) | (DMEnvelope.recipient_id == current_user.id)
-    ).order_by(DMEnvelope.timestamp.desc())
+    return {
+        "status": "success",
+        "conversations": _build_dm_conversation_list(db, current_user, archived=False),
+    }
 
-    # Group by the "other user" (not current user) and get latest message
-    conversations = {}
-    for envelope in conversations_query:
-        other_user_id = envelope.recipient_id if envelope.sender_id == current_user.id else envelope.sender_id
 
-        if other_user_id not in conversations:
-            conversations[other_user_id] = envelope
+@router.get("/dm/conversations/archived")
+@rate_limit_per_ip("60/minute")
+async def get_archived_dm_conversations(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
+    return {
+        "status": "success",
+        "conversations": _build_dm_conversation_list(db, current_user, archived=True),
+    }
 
-    # Get user info for each conversation
-    result = []
-    for other_user_id, latest_message in conversations.items():
-        other_user = db.query(User).filter(User.id == other_user_id).first()
-        if other_user:
-            # Calculate unread count for this conversation
-            unread_count = db.query(DMEnvelope).filter(
-                DMEnvelope.sender_id == other_user_id,
-                DMEnvelope.recipient_id == current_user.id,
-                DMEnvelope.id > getattr(latest_message, 'last_read_id', 0)  # This would need to be stored somewhere
-            ).count()
 
-            result.append({
-                "user": convert_user(other_user),
-                "lastMessage": convert_dm_envelope(db, latest_message, current_user.id),
-                "unreadCount": unread_count
-            })
+class DmMarkReadRequest(BaseModel):
+    upToEnvelopeId: int | None = None
 
-    # Sort by latest message timestamp
-    result.sort(key=lambda x: x["lastMessage"]["timestamp"], reverse=True)
+
+def _mark_dm_conversation_read(
+    db: Session,
+    user_id: int,
+    other_user_id: int,
+    *,
+    up_to_envelope_id: int | None = None,
+) -> int:
+    """Advance read cursor for a DM thread; returns the new last_read_envelope_id."""
+    pref = _get_dm_conversation_preference(db, user_id, other_user_id)
+    if up_to_envelope_id is not None and up_to_envelope_id > 0:
+        pref.last_read_envelope_id = max(pref.last_read_envelope_id, up_to_envelope_id)
+    else:
+        latest = db.query(DMEnvelope).filter(
+            ((DMEnvelope.sender_id == user_id) & (DMEnvelope.recipient_id == other_user_id))
+            | ((DMEnvelope.sender_id == other_user_id) & (DMEnvelope.recipient_id == user_id)),
+            DMEnvelope.deleted_at.is_(None),
+        ).order_by(DMEnvelope.id.desc()).first()
+        if latest is not None:
+            pref.last_read_envelope_id = max(pref.last_read_envelope_id, latest.id)
+    db.flush()
+    return int(pref.last_read_envelope_id)
+
+
+class DmArchiveRequest(BaseModel):
+    archived: bool
+
+
+@router.post("/dm/conversations/{other_user_id}/archive")
+@rate_limit_per_ip("60/minute")
+async def set_dm_conversation_archived(
+    request: Request,
+    other_user_id: int,
+    body: DmArchiveRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if other_user_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    if other_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot archive conversation with yourself")
+
+    other_user = db.query(User).filter(User.id == other_user_id).first()
+    if not other_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    has_messages = db.query(DMEnvelope).filter(
+        ((DMEnvelope.sender_id == current_user.id) & (DMEnvelope.recipient_id == other_user_id))
+        | ((DMEnvelope.sender_id == other_user_id) & (DMEnvelope.recipient_id == current_user.id)),
+        DMEnvelope.deleted_at.is_(None),
+    ).first()
+    if not has_messages:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    pref = _get_dm_conversation_preference(db, current_user.id, other_user_id)
+    pref.archived = bool(body.archived)
+    db.commit()
+
+    await messagingManager.send_update_to_user(
+        current_user.id,
+        "dmConversationArchive",
+        {
+            "otherUserId": other_user_id,
+            "archived": pref.archived,
+        },
+        db,
+    )
 
     return {
         "status": "success",
-        "conversations": result
+        "otherUserId": other_user_id,
+        "archived": pref.archived,
+    }
+
+
+@router.post("/dm/conversations/{other_user_id}/read")
+@rate_limit_per_ip("60/minute")
+async def mark_dm_conversation_read(
+    request: Request,
+    other_user_id: int,
+    body: DmMarkReadRequest | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if other_user_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    if other_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot mark conversation with yourself as read")
+
+    other_user = db.query(User).filter(User.id == other_user_id).first()
+    if not other_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    has_messages = db.query(DMEnvelope).filter(
+        ((DMEnvelope.sender_id == current_user.id) & (DMEnvelope.recipient_id == other_user_id))
+        | ((DMEnvelope.sender_id == other_user_id) & (DMEnvelope.recipient_id == current_user.id)),
+        DMEnvelope.deleted_at.is_(None),
+    ).first()
+    if not has_messages:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    up_to = body.upToEnvelopeId if body is not None else None
+    last_read = _mark_dm_conversation_read(
+        db,
+        current_user.id,
+        other_user_id,
+        up_to_envelope_id=up_to,
+    )
+    db.commit()
+
+    return {
+        "status": "success",
+        "otherUserId": other_user_id,
+        "lastReadEnvelopeId": last_read,
     }
 
 
@@ -813,7 +1748,8 @@ async def _edit_message_internal(
     db.commit()
     db.refresh(message)
 
-    payload = convert_message(message)
+    verified_users_data = get_verified_users_data(db)
+    payload = convert_message(message, verified_users_data)
     
     # Prepare log fields
     log_fields = {
@@ -912,7 +1848,8 @@ async def add_reaction(
     # Refresh message to get updated reactions
     db.refresh(message)
 
-    message_data = convert_message(message)
+    verified_users_data = get_verified_users_data(db)
+    message_data = convert_message(message, verified_users_data)
 
     # Broadcast reaction update
     try:
@@ -1019,7 +1956,6 @@ class MessaggingSocketManager:
     def __init__(self) -> None:
         self.connections: list[WebSocket] = []
         self.user_by_ws: dict[WebSocket, int] = {}
-        self.online_users: set[int] = set()
         self.typing_users: dict[int, float] = {}  # user_id -> timestamp
         self.dm_typing_users: dict[int, dict[int, float]] = {}  # user_id -> {recipient_id -> timestamp}
         self.typing_state: dict[int, bool] = {}  # user_id -> is_typing (for public chat)
@@ -1101,8 +2037,23 @@ class MessaggingSocketManager:
         elif update_type == "statusUpdate":
             # Deduplicate by user ID
             sig_data = {"type": update_type, "userId": data.get("userId")}
+        elif update_type == "profileUpdate":
+            sig_data = {
+                "type": update_type,
+                "userId": data.get("id"),
+                "username": data.get("username"),
+                "display_name": data.get("display_name"),
+                "bio": data.get("bio"),
+                "profile_picture": data.get("profile_picture"),
+            }
         elif update_type == "registeredUserCount":
             sig_data = {"type": update_type, "count": data.get("count")}
+        elif update_type == "dmConversationArchive":
+            sig_data = {
+                "type": update_type,
+                "otherUserId": data.get("otherUserId"),
+                "archived": data.get("archived"),
+            }
         else:
             # For unknown types, use full data (less efficient but safe)
             sig_data = {"type": update_type, "data": data}
@@ -1310,29 +2261,17 @@ class MessaggingSocketManager:
             self.connections.remove(websocket)
             if websocket in self.user_by_ws:
                 user_id = self.user_by_ws[websocket]
-                # Set user offline in DB
                 try:
-                    # Ensure session is in a usable state
-                    try:
-                        db.rollback()
-                    except Exception:
-                        pass
-                    
-                    user = db.query(User).filter(User.id == user_id).first()
-                    if user:
-                        user.online = False
-                        user.last_seen = datetime.now()
-                        db.commit()
-                        # Remove from online users
-                        self.online_users.discard(user_id)
-                        # Broadcast status change
-                        await self.broadcast_status_change(user_id, False, user.last_seen.isoformat(), db)
+                    became_offline, last_seen = presence_service.unregister_connection(user_id, websocket)
+                    if became_offline and last_seen is not None:
+                        await self.broadcast_status_change(
+                            user_id,
+                            False,
+                            last_seen.isoformat(),
+                            db,
+                        )
                 except Exception as e:
                     logger.error(f"Failed to set user offline during cleanup: {e}")
-                    try:
-                        db.rollback()
-                    except Exception:
-                        pass
                 finally:
                     del self.user_by_ws[websocket]
             # Cleanup subscriptions
@@ -1354,6 +2293,28 @@ class MessaggingSocketManager:
             # Only send to authenticated websockets (those with user_id set)
             if websocket in self.user_by_ws:
                 await self._send_update(websocket, message_type, update_data, db)
+
+    async def broadcast_new_message(
+        self,
+        message: Message,
+        db: Session | None = None,
+        *,
+        sender_client_message_id: str | None = None,
+    ):
+        """Broadcast newMessage; only the sender receives client_message_id when provided."""
+        sender_id = message.user_id
+        verified_users_data = get_verified_users_data(db)
+        for websocket in self.connections:
+            viewer_id = self.user_by_ws.get(websocket)
+            if viewer_id is None:
+                continue
+            payload = convert_message_for_user(
+                message,
+                viewer_id,
+                sender_client_message_id=sender_client_message_id,
+                verified_users_data=verified_users_data,
+            )
+            await self._send_update(websocket, "newMessage", payload, db)
 
     async def broadcast_registered_user_count(self, db: Session):
         """Notify all clients of the current non-deleted user count (public chat member count)."""
@@ -1402,6 +2363,12 @@ class MessaggingSocketManager:
                     "online": online,
                     "lastSeen": last_seen
                 }, db)
+
+    async def broadcast_profile_update(self, user_id: int, update_data: dict, db: Session | None = None):
+        """Broadcast profile update to connections subscribed to this user."""
+        for websocket in self.connections:
+            if websocket in self.ws_subscriptions and user_id in self.ws_subscriptions[websocket]:
+                await self._send_update(websocket, "profileUpdate", update_data, db)
 
     async def cleanup_stale_typing_indicators(self, db: Session):
         """Periodically cleanup typing indicators that haven't been updated in 3+ seconds"""
@@ -1508,31 +2475,91 @@ async def proxy_normal_file(
     current_user: User = Depends(get_current_user_allow_suspended)
 ):
     """Proxy file requests to file_storage service."""
+    from fastapi.responses import FileResponse, Response
+
+    safe_name = Path(filename).name
+    if filename != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+
     mod = service_calls._get_file_storage_module()
     if mod:
         try:
-            return await mod.get_file_normal_internal(filename)
-        except HTTPException:
-            raise
+            return await mod.get_file_normal_internal(safe_name)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
         except Exception as e:
             logger.error("In-process file_storage.get_file_normal failed: %s", e)
             raise HTTPException(status_code=500, detail="File service unavailable")
+    else:
+        file_storage_url = _get_file_storage_url()
+        target_url = f"{file_storage_url}/uploads/files/normal/{safe_name}"
+        headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(target_url, headers=headers)
+                if response.status_code == 200:
+                    return Response(
+                        content=response.content,
+                        status_code=response.status_code,
+                        headers=dict(response.headers),
+                        media_type=response.headers.get("content-type")
+                    )
+                if response.status_code != 404:
+                    return Response(
+                        content=response.content,
+                        status_code=response.status_code,
+                        headers=dict(response.headers),
+                        media_type=response.headers.get("content-type")
+                    )
+            except httpx.RequestError as e:
+                logger.error("Failed to proxy file request: %s", e)
+                raise HTTPException(status_code=500, detail="File service unavailable")
+
+    legacy_path = FILES_NORMAL_DIR / safe_name
+    if legacy_path.is_file():
+        return FileResponse(str(legacy_path))
+
+    raise HTTPException(status_code=404, detail="File not found")
+
+
+@router.api_route("/uploads/files/thumbs/{filename:path}", methods=["GET"])
+async def proxy_thumb_file(
+    request: Request,
+    filename: str,
+    current_user: User = Depends(get_current_user_allow_suspended),
+):
+    """Proxy public-chat thumbnail requests to file_storage THUMBS_DIR."""
+    from fastapi.responses import Response
+
+    safe_name = Path(filename).name
+    if filename != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+
+    mod = service_calls._get_file_storage_module()
+    if mod:
+        try:
+            return await mod.get_file_thumb_internal(safe_name)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("In-process file_storage.get_file_thumb failed: %s", e)
+            raise HTTPException(status_code=500, detail="File service unavailable")
 
     file_storage_url = _get_file_storage_url()
-    target_url = f"{file_storage_url}/uploads/files/normal/{filename}"
+    target_url = f"{file_storage_url}/uploads/files/thumbs/{safe_name}"
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(target_url, headers=headers)
-            from fastapi.responses import Response
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers=dict(response.headers),
-                media_type=response.headers.get("content-type")
+                media_type=response.headers.get("content-type", "image/jpeg"),
             )
         except httpx.RequestError as e:
-            logger.error("Failed to proxy file request: %s", e)
+            logger.error("Failed to proxy thumb request: %s", e)
             raise HTTPException(status_code=500, detail="File service unavailable")
 
 

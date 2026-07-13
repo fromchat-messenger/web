@@ -17,7 +17,7 @@ import { TypingIndicator } from "./TypingIndicator";
 import { OnlineStatus } from "./OnlineStatus";
 import { typingManager } from "@/core/typingManager";
 import { PublicChatPanel } from "./panels/PublicChatPanel";
-import { MaterialIcon, MaterialIconButton } from "@/utils/material";
+import { MaterialButton, MaterialIcon, MaterialIconButton } from "@/utils/material";
 import styles from "@/pages/chat/css/layout.module.scss";
 import rightPanelStyles from "@/pages/chat/css/right-panel.module.scss";
 
@@ -52,7 +52,7 @@ function ChatHeaderText({ panel }: { panel: MessagePanel | null }) {
 }
 
 export function MessagePanelRenderer({ panel }: MessagePanelRendererProps) {
-    const { applyPendingPanel, isSwitching, pendingPanel, activePanel, setIsSwitching } = useChatStore();
+    const { applyPendingPanel, isSwitching, pendingPanel, activePanel, setIsSwitching, setActivePanel } = useChatStore();
     const { setProfileDialog } = useProfileStore();
     const messagePanelRef = useRef<HTMLDivElement>(null);
     const [panelState, setPanelState] = useState<MessagePanelState | null>(null);
@@ -71,7 +71,37 @@ export function MessagePanelRenderer({ panel }: MessagePanelRendererProps) {
     // Drag & drop
     const [isDragging, setIsDragging] = useState(false);
     const dragCounterRef = useRef(0);
+    const [peerDeleted, setPeerDeleted] = useState(false);
     const addFilesRef = useRef<null | ((files: File[]) => void)>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        setPeerDeleted(false);
+        if (!panel?.isDm()) return;
+
+        const dmPanel = panel as DMPanel;
+        dmPanel.getProfile().then((profile) => {
+            if (!cancelled) {
+                setPeerDeleted(Boolean(profile?.deleted));
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [panel]);
+
+    async function handleDeleteDeletedPeerChat() {
+        if (!panel?.isDm()) return;
+
+        const dmPanel = panel as DMPanel;
+        const messages = [...dmPanel.getMessages()].filter((message) => message.id > 0);
+        for (const message of messages) {
+            await dmPanel.handleDeleteMessage(message.id);
+        }
+        dmPanel.clearMessages();
+        setActivePanel(null);
+    }
 
     useEffect(() => {
         if (!panel || !panelState) return;
@@ -307,7 +337,7 @@ export function MessagePanelRenderer({ panel }: MessagePanelRendererProps) {
                                     <h4 id="chat-name">{panelState?.title || "Выбор чата"}</h4>
                                     <ChatHeaderText panel={panel} />
                                 </div>
-                                {panel?.isDm() && (
+                                {panel?.isDm() && !peerDeleted && (
                                     <MaterialIconButton onClick={handleCallClick} icon="call--filled" />
                                 )}
                             </div>
@@ -376,7 +406,17 @@ export function MessagePanelRenderer({ panel }: MessagePanelRendererProps) {
                             </div>
                         )}
 
-                        {panel && (
+                        {panel && (peerDeleted && panel.isDm() ? (
+                            <div className={rightPanelStyles.deleteChatBar}>
+                                <MaterialButton
+                                    variant="filled"
+                                    color="error"
+                                    onClick={handleDeleteDeletedPeerChat}
+                                >
+                                    Удалить чат
+                                </MaterialButton>
+                            </div>
+                        ) : (
                             <ChatInputWrapper
                                     onSendMessage={(text, files) => {
                                         panel.handleSendMessage(text, replyTo?.id, files);
@@ -433,7 +473,7 @@ export function MessagePanelRenderer({ panel }: MessagePanelRendererProps) {
                                         }
                                     }}
                                 />
-                        )}
+                        ))}
                     </div>
 
                     {panel && (

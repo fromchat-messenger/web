@@ -4,12 +4,14 @@ import { useChatStore } from "@/state/chat";
 import { useDM, type DMUser } from "@/pages/chat/hooks/useDM";
 import api from "@/core/api";
 import { StatusBadge } from "@/core/components/StatusBadge";
-import type { Message } from "@/core/types";
+import type { Message, VerificationStatus } from "@/core/types";
 import { websocket } from "@/core/websocket";
 import { onlineStatusManager } from "@/core/onlineStatusManager";
 import { OnlineIndicator } from "@/pages/chat/ui/right/OnlineIndicator";
 import defaultAvatar from "@/images/default-avatar.png";
-import { MaterialBadge, MaterialCircularProgress, MaterialList, MaterialListItem } from "@/utils/material";
+import { MaterialBadge, MaterialCircularProgress, MaterialIcon, MaterialList, MaterialListItem } from "@/utils/material";
+import { displayNameForUser, isDeletedPeer } from "@/core/userDisplay";
+import { DeletedUserAvatar } from "@/core/DeletedUserAvatar";
 import styles from "@/pages/chat/css/left-panel.module.scss";
 
 interface PublicChat {
@@ -31,6 +33,7 @@ interface DMConversation {
     unreadCount: number;
     publicKey?: string | null;
     verified?: boolean;
+    verification_status?: VerificationStatus;
 }
 
 type ChatItem = PublicChat | DMConversation;
@@ -73,6 +76,7 @@ export function UnifiedChatsList() {
             ...dmUsers.map((user: DMUser) => ({
                 ...user,
                 userId: user.id,
+                display_name: displayNameForUser({ ...user, id: user.id }),
                 type: "dm" as const
             })), 
             {
@@ -180,6 +184,19 @@ export function UnifiedChatsList() {
         return <MaterialCircularProgress />;
     }
 
+    if (user.isSuspended) {
+        return (
+            <MaterialList className={styles.unifiedChatsList}>
+                <MaterialListItem
+                    headline="Аккаунт заблокирован"
+                    style={{ cursor: "pointer" }}
+                >
+                    <MaterialIcon name="block--filled" slot="icon" />
+                </MaterialListItem>
+            </MaterialList>
+        );
+    }
+
     return (
         <MaterialList className={styles.unifiedChatsList}>
             {allChats.map((chat) => {
@@ -212,40 +229,53 @@ export function UnifiedChatsList() {
                     );
                 }
 
+                const isDeletedDm = isDeletedPeer(chat);
+                const displayName = displayNameForUser({ ...chat, id: chat.id });
+
                 return (
                     <MaterialListItem
                         key={`dm-${chat.id}`}
-                        headline={chat.display_name}
+                        headline={displayName}
                         onClick={() => handleDMClick(chat)}
                         style={{ cursor: "pointer" }}
                     >
                         <div slot="headline" className="dm-list-headline">
-                            {chat.display_name}
-                            <StatusBadge 
-                                verified={chat.verified || false}
-                                userId={chat.userId}
-                                size="small"
-                            />
+                            {displayName}
+                            {!isDeletedDm && (
+                                <StatusBadge
+                                    verificationStatus={chat.verification_status}
+                                    verified={chat.verified || false}
+                                    size="small"
+                                />
+                            )}
                         </div>
                         <span slot="description" className={styles.listDescription}>
                             {chat.lastMessage || "Нет сообщений"}
                         </span>
                         <div slot="icon" style={{ position: "relative", width: "40px", height: "40px", display: "inline-block" }}>
-                            <img
-                                src={chat.profile_picture || defaultAvatar}
-                                alt={chat.display_name}
-                                style={{
-                                    width: "40px",
-                                    height: "40px",
-                                    borderRadius: "50%",
-                                    objectFit: "cover",
-                                    display: "block"
-                                }}
-                                onError={(e) => {
-                                    e.target.src = defaultAvatar;
-                                }}
-                            />
-                            <OnlineIndicator userId={chat.id} />
+                            {isDeletedDm ? (
+                                <DeletedUserAvatar
+                                    userId={chat.id}
+                                    className={styles.deletedUserAvatar}
+                                    iconClassName={styles.deletedUserAvatarIcon}
+                                />
+                            ) : (
+                                <img
+                                    src={chat.profile_picture || defaultAvatar}
+                                    alt={displayName}
+                                    style={{
+                                        width: "40px",
+                                        height: "40px",
+                                        borderRadius: "50%",
+                                        objectFit: "cover",
+                                        display: "block"
+                                    }}
+                                    onError={(e) => {
+                                        e.target.src = defaultAvatar;
+                                    }}
+                                />
+                            )}
+                            {!isDeletedDm && <OnlineIndicator userId={chat.id} />}
                         </div>
                         {chat.unreadCount > 0 && (
                             <MaterialBadge slot="end-icon">

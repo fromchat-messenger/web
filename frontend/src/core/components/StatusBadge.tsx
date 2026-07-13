@@ -1,37 +1,32 @@
-import { useState, useEffect } from "react";
-import api from "@/core/api";
-import { useUserStore } from "@/state/user";
 import { MaterialIcon } from "@/utils/material";
 
+export type VerificationStatus = "verified" | "warning" | "blocked" | "none";
+
 interface StatusBadgeProps {
-    verified: boolean;
-    userId?: number;
+    verificationStatus?: VerificationStatus | null;
+    /** @deprecated Use verificationStatus instead */
+    verified?: boolean;
     size?: "small" | "medium" | "large";
 }
 
-export function StatusBadge({ verified, userId, size = "small" }: StatusBadgeProps) {
-    const [isSimilarToVerified, setIsSimilarToVerified] = useState(false);
-    const { user } = useUserStore();
-    
+function resolveVerificationStatus(
+    verificationStatus?: VerificationStatus | null,
+    verified?: boolean,
+): VerificationStatus {
+    if (verificationStatus) {
+        return verificationStatus;
+    }
+    if (verified) {
+        return "verified";
+    }
+    return "none";
+}
+
+export function StatusBadge({ verificationStatus, verified, size = "small" }: StatusBadgeProps) {
+    const status = resolveVerificationStatus(verificationStatus, verified);
     const className = `status-badge ${size}`;
 
-    // Check similarity for unverified users
-    useEffect(() => {
-        if (!verified && userId && user.authToken) {
-            api.user.profile.checkSimilarity(userId, user.authToken)
-                .then(result => {
-                    setIsSimilarToVerified(result?.isSimilar || false);
-                })
-                .catch(error => {
-                    console.error('Error checking similarity:', error);
-                    setIsSimilarToVerified(false);
-                });
-        } else {
-            setIsSimilarToVerified(false);
-        }
-    }, [verified, userId, user.authToken]);
-
-    if (verified) {
+    if (status === "verified") {
         return (
             <span className={`${className} verified`} title="Подтверждённый аккаунт">
                 <MaterialIcon name="verified--filled" />
@@ -39,7 +34,7 @@ export function StatusBadge({ verified, userId, size = "small" }: StatusBadgePro
         );
     }
 
-    if (isSimilarToVerified) {
+    if (status === "warning") {
         return (
             <span className={`${className} warning`} title="Похож на подтверждённый аккаунт">
                 <MaterialIcon name="warning--filled" />
@@ -47,6 +42,13 @@ export function StatusBadge({ verified, userId, size = "small" }: StatusBadgePro
         );
     }
 
-    // Don't show anything if not verified and not similar
+    if (status === "blocked") {
+        return (
+            <span className={`${className} blocked`} title="Аккаунт заблокирован">
+                <MaterialIcon name="block--filled" />
+            </span>
+        );
+    }
+
     return null;
 }

@@ -17,10 +17,10 @@ export function AccountPanel({ onClose }: AccountPanelProps) {
 
         try {
             await confirm({
-                headline: "Delete Account?",
-                description: "This will permanently delete your account and all your data. This action cannot be undone.",
-                confirmText: "Delete",
-                cancelText: "Cancel"
+                headline: "Удалить аккаунт?",
+                description: "Профиль будет удалён без возможности восстановления, логин освободится. Отправленные сообщения могут остаться в чатах.",
+                confirmText: "Удалить",
+                cancelText: "Отмена"
             });
 
             await api.user.auth.deleteAccount(authToken);

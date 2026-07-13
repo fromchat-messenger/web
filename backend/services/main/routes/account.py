@@ -9,13 +9,28 @@ from sqlalchemy import inspect, text
 import uuid
 import secrets
 from user_agents import parse as parse_ua
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..constants import OWNER_USERNAME
 from ..dependencies import get_current_user, get_current_user_allow_suspended, get_db
-from ..models import LoginRequest, RegisterRequest, ChangePasswordRequest, User, CryptoPublicKey, CryptoBackup, DeviceSession
+from ..models import (
+    LoginRequest,
+    RegisterRequest,
+    ChangePasswordRequest,
+    VerifyPasswordRequest,
+    DeleteAccountRequest,
+    User,
+    CryptoPublicKey,
+    CryptoBackup,
+    DeviceSession,
+)
 from ..utils import create_token, get_password_hash, verify_password, get_client_ip
 from ..validation import is_valid_password, is_valid_username, is_valid_display_name
+from ..deleted_user import (
+    apply_deleted_user_db_fields,
+    deleted_user_api_fields,
+    is_deleted_user,
+    is_suspended_user,
+)
 import os
 
 from ..security.audit import log_security
@@ -99,22 +114,69 @@ def _reset_failed_logins(identifier: str) -> None:
 def _is_admin(user: User) -> bool:
     return user.id == 1
 
-def convert_user(user: User) -> dict:
+def convert_user(user: User, db: Session) -> dict:
+    from ..presence_service import presence_service
+    from ..verification_service import compute_verification_status, get_verified_users_data
+
+    if is_deleted_user(user):
+        return {
+            "id": user.id,
+            "admin": _is_admin(user),
+            **deleted_user_api_fields(user.id),
+        }
+
+    online, last_seen = presence_service.get_presence(user.id)
+    verified_users_data = get_verified_users_data(db)
+    verification_status = compute_verification_status(user, verified_users_data)
+    effective_last_seen = last_seen or user.last_seen or user.created_at
     return {
         "id": user.id,
         "created_at": user.created_at.isoformat(),
-        "last_seen": user.last_seen.isoformat(),
-        "online": user.online,
+        "last_seen": effective_last_seen.isoformat(),
+        "online": online,
         "username": user.username,
         "display_name": user.display_name,
         "profile_picture": user.profile_picture,
         "bio": user.bio,
         "admin": _is_admin(user),
         "verified": user.verified,
+        "verification_status": verification_status.value,
         "suspended": user.suspended or False,
         "suspension_reason": user.suspension_reason,
-        "deleted": (user.deleted or user.suspended) or False  # Treat suspended as deleted
+        "deleted": False,
     }
+
+
+def convert_user_for_dm_conversation(user: User, db: Session) -> dict:
+    """Minimal user payload for DM conversation list entries."""
+    from ..presence_service import presence_service
+    from ..verification_service import compute_verification_status, get_verified_users_data
+
+    if is_deleted_user(user):
+        return {
+            "id": user.id,
+            **deleted_user_api_fields(user.id),
+        }
+
+    online, last_seen = presence_service.get_presence(user.id)
+    verified_users_data = get_verified_users_data(db)
+    verification_status = compute_verification_status(user, verified_users_data)
+    effective_last_seen = last_seen or user.last_seen or user.created_at
+    payload = {
+        "id": user.id,
+        "username": user.username,
+        "display_name": user.display_name,
+        "profile_picture": user.profile_picture,
+        "deleted": False,
+        "verification_status": verification_status.value,
+        "online": online,
+        "last_seen": effective_last_seen.isoformat(),
+    }
+    if is_suspended_user(user):
+        payload["suspended"] = True
+        payload["suspension_reason"] = user.suspension_reason
+    return payload
+
 
 @router.get("/instance_id")
 def get_instance_id_public():
@@ -129,6 +191,19 @@ def check_auth(current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "admin": _is_admin(current_user)
     }
+
+
+@router.get("/check_username")
+@rate_limit_per_ip("30/minute")
+def check_username(request: Request, username: str, db: Session = Depends(get_db)):
+    u = username.strip()
+    if not is_valid_username(u):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username must be 3 to 20 characters and contain only English letters, digits, hyphens, and underscores",
+        )
+    exists = db.query(User).filter(User.username == u).first() is not None
+    return {"exists": exists}
 
 
 @router.post("/login")
@@ -173,6 +248,10 @@ def login(request: Request, login_request: LoginRequest, db: Session = Depends(g
                 failures=total_failures,
                 window_seconds=_FAILED_ATTEMPT_WINDOW_SECONDS,
             )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Try again in a few minutes.",
+            )
         raise HTTPException(
             status_code=401,
             detail="Неверное имя пользователя или пароль"
@@ -201,9 +280,6 @@ def login(request: Request, login_request: LoginRequest, db: Session = Depends(g
         revoked=False,
     )
     db.add(device)
-
-    user.online = True
-    user.last_seen = datetime.now()
     db.commit()
     logging.getLogger("uvicorn.error").info("Login DB commit complete for user_id=%s", user.id)
 
@@ -230,7 +306,7 @@ def login(request: Request, login_request: LoginRequest, db: Session = Depends(g
         "status": "success",
         "message": "Login successful",
         "token": token,
-        "user": convert_user(user)
+        "user": convert_user(user, db)
     }
 
 
@@ -294,6 +370,18 @@ def register(
             detail="Это имя пользователя уже занято"
         )
 
+    bio_text = (register_request.bio or "").strip() or None
+    if bio_text and len(bio_text) > 500:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Описание должно быть не длиннее 500 символов",
+        )
+    if bio_text and contains_profanity(bio_text):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Описание содержит запрещённые слова",
+        )
+
     hashed_password = get_password_hash(password)
     
     # Set verified=True for the owner (first user to register)
@@ -304,8 +392,7 @@ def register(
         username=username,
         display_name=display_name,
         password_hash=hashed_password,
-        online=True,
-        last_seen=datetime.now(),
+        bio=bio_text,
         verified=is_owner
     )
 
@@ -363,7 +450,7 @@ def register(
         "status": "success",
         "message": "Регистрация прошла успешно",
         "token": token,
-        "user": convert_user(new_user)
+        "user": convert_user(new_user, db)
     }
 
 @router.get("/crypto/public-key")
@@ -448,38 +535,49 @@ def delete_user_as_owner(
 
     return {"status": "success", "deleted_user_id": user_id}
 
+def _revoke_device_session(db: Session, user_id: int, session_id: str) -> int:
+    """Mark a device session revoked. Returns the number of rows updated."""
+    return (
+        db.query(DeviceSession)
+        .filter(
+            DeviceSession.user_id == user_id,
+            DeviceSession.session_id == session_id,
+        )
+        .update({DeviceSession.revoked: True}, synchronize_session=False)
+    )
+
+
 @router.get("/logout")
 def logout(
-    http: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    # Revoke current session
-    from utils import verify_token as _verify_token
-    payload = _verify_token(credentials.credentials)
-    if payload and payload.get("session_id"):
-        db.query(DeviceSession).filter(
-            DeviceSession.user_id == current_user.id,
-            DeviceSession.session_id == payload["session_id"],
-        ).update({DeviceSession.revoked: True})
+    session_id = getattr(request.state, "session_id", None)
+    if session_id:
+        updated = _revoke_device_session(db, current_user.id, session_id)
+        db.commit()
+        if updated == 0:
+            _logger.warning(
+                "logout: session_id=%s not found for user_id=%s",
+                session_id,
+                current_user.id,
+            )
+    else:
+        _logger.warning("logout: missing session_id for user_id=%s", current_user.id)
 
-    current_user.online = False
-    current_user.last_seen = datetime.now()
-    db.commit()
-
-    client_ip = get_client_ip(http)
+    client_ip = get_client_ip(request)
     log_security(
         "logout",
         username=current_user.username,
         user_id=current_user.id,
         ip=client_ip,
-        session_id=payload.get("session_id") if payload else None,
+        session_id=session_id,
     )
 
     return {
         "status": "success",
-        "message": "Logged out successfully"
+        "message": "Logged out successfully",
     }
 
 
@@ -488,9 +586,8 @@ def logout(
 def change_password(
     request: Request,
     password_request: ChangePasswordRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     # Verify current derived password against stored hash
     if not verify_password(password_request.currentPasswordDerived.strip(), current_user.password_hash):
@@ -503,15 +600,13 @@ def change_password(
 
     # Optionally revoke all other sessions, keeping the current one
     if password_request.logoutAllExceptCurrent:
-        from utils import verify_token as _verify_token
-        payload = _verify_token(credentials.credentials)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        current_session_id = payload.get("session_id")
+        current_session_id = getattr(request.state, "session_id", None)
+        if not current_session_id:
+            raise HTTPException(status_code=401, detail="Invalid session")
         db.query(DeviceSession).filter(
             DeviceSession.user_id == current_user.id,
             DeviceSession.session_id != current_session_id,
-        ).update({DeviceSession.revoked: True})
+        ).update({DeviceSession.revoked: True}, synchronize_session=False)
         db.commit()
 
     client_ip = get_client_ip(request)
@@ -526,13 +621,37 @@ def change_password(
     return {"status": "success"}
 
 
+def _verify_derived_password(user: User, password_derived: str) -> None:
+    if not verify_password(password_derived.strip(), user.password_hash):
+        raise HTTPException(status_code=400, detail="Wrong password")
+
+
+@router.post("/verify-password")
+@rate_limit_per_ip("10/minute")
+def verify_password_endpoint(
+    request: Request,
+    body: VerifyPasswordRequest,
+    current_user: User = Depends(get_current_user),
+):
+    # 400 (not 401): mobile client treats 401 as global auth failure and clears the session.
+    _verify_derived_password(current_user, body.passwordDerived)
+    client_ip = get_client_ip(request)
+    log_security(
+        "password_verified",
+        username=current_user.username,
+        user_id=current_user.id,
+        ip=client_ip,
+    )
+    return {"status": "success"}
+
+
 @router.get("/users")
 @rate_limit_per_ip("30/minute")  # Per-IP limit to prevent abuse
 def list_users(request: Request, current_user: User = Depends(get_current_user_allow_suspended), db: Session = Depends(get_db)):
     users = db.query(User).order_by(User.username.asc()).all()
     return {
         "users": [
-            convert_user(u) for u in users if u.id != current_user.id
+            convert_user(u, db) for u in users if u.id != current_user.id
         ]
     }
 
@@ -562,7 +681,7 @@ def search_users(request: Request, q: str, current_user: User = Depends(get_curr
     ).order_by(User.username.asc()).limit(20).all()
     
     return {
-        "users": [convert_user(u) for u in users]
+        "users": [convert_user(u, db) for u in users]
     }
 
 
@@ -573,15 +692,10 @@ async def _delete_user_data(user: User, db: Session):
     """
     user_id = user.id
     
-    # Mark user as deleted and clear sensitive data
-    user.deleted = True
-    user.display_name = f"Deleted User #{user_id}"
-    user.bio = None
-    user.password_hash = ""
-    user.username = f"deleted_{user_id}"
-    user.profile_picture = None
-    user.last_seen = None  # Clear last seen timestamp
-    user.created_at = None  # Clear member since timestamp
+    from ..presence_service import presence_service
+
+    apply_deleted_user_db_fields(user)
+    presence_service.remove_user(user_id)
     
     # Delete profile picture file if exists
     if user.profile_picture and user.profile_picture.startswith("/api/profile-picture/"):
@@ -630,24 +744,31 @@ async def _delete_user_data(user: User, db: Session):
         pass
 
     try:
+        from .profile import broadcast_profile_update
+        await broadcast_profile_update(user, db)
+    except Exception:
+        pass
+
+    try:
         from .messaging import messagingManager
         await messagingManager.broadcast_registered_user_count(db)
     except Exception:
         pass
 
 
-@router.post("/delete")
-async def delete_account(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
+async def _delete_account_impl(
+    body: DeleteAccountRequest,
+    current_user: User,
+    db: Session,
+) -> dict:
     """
     Delete the current user's own account - preserves messages/DMs/reactions/files
     """
-    # Prevent admin/owner account self-deletion
     if _is_admin(current_user):
         raise HTTPException(status_code=400, detail="Cannot delete admin/owner account")
-    
+
+    _verify_derived_password(current_user, body.passwordDerived)
+
     await _delete_user_data(current_user, db)
 
     log_security(
@@ -659,5 +780,23 @@ async def delete_account(
 
     return {
         "status": "success",
-        "message": "Account deleted successfully"
+        "message": "Account deleted successfully",
     }
+
+
+@router.post("/delete")
+async def delete_account(
+    body: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return await _delete_account_impl(body, current_user, db)
+
+
+@router.post("/account/delete")
+async def delete_account_alias(
+    body: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return await _delete_account_impl(body, current_user, db)

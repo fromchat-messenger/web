@@ -14,6 +14,9 @@ import { OnlineStatus } from "./right/OnlineStatus";
 import { Input } from "@/core/components/Input";
 import { StyledDialog } from "@/core/components/StyledDialog";
 import { MaterialButton, MaterialFab, MaterialIcon } from "@/utils/material";
+import { displayNameForUser, isDeletedPeer } from "@/core/userDisplay";
+import { DeletedUserAvatar } from "@/core/DeletedUserAvatar";
+import { parseApiTimestamp } from "@/utils/utils";
 import styles from "@/pages/chat/css/profile-dialog.module.scss";
 
 interface SectionProps {
@@ -102,9 +105,12 @@ export function ProfileDialog() {
                 if (userProfile) {
                     freshData = {
                         ...userProfile,
-                        userId: userProfile.id, // Preserve the userId field
+                        userId: userProfile.id,
                         memberSince: userProfile.created_at,
-                        isOwnProfile: profileData.isOwnProfile
+                        isOwnProfile: profileData.isOwnProfile,
+                        deleted: userProfile.deleted,
+                        verification_status: userProfile.verification_status,
+                        suspended: userProfile.suspended,
                     };
                 }
             }
@@ -329,7 +335,7 @@ export function ProfileDialog() {
     }
 
     function formatDate(dateString: string) {
-        return new Date(dateString).toLocaleDateString("ru-RU", {
+        return parseApiTimestamp(dateString).toLocaleDateString("ru-RU", {
             year: "numeric",
             month: "long",
             day: "numeric"
@@ -410,6 +416,8 @@ export function ProfileDialog() {
 
     if (!currentData) return null;
 
+    const isDeletedProfile = isDeletedPeer(currentData);
+
     return (
         <StyledDialog
             open={isOpen}
@@ -431,16 +439,24 @@ export function ProfileDialog() {
             }
         >
             <div className={styles.profilePictureSection}>
-                <img
-                    className={styles.profilePicture}
-                    src={currentData.profilePicture || defaultAvatar}
-                    alt="Profile Picture"
-                    onError={(e) => {
-                        e.target.src = defaultAvatar;
-                    }}
-                />
+                {isDeletedProfile ? (
+                    <DeletedUserAvatar
+                        userId={currentData.userId!}
+                        className={styles.deletedAvatar}
+                        iconClassName={styles.deletedAvatarIcon}
+                    />
+                ) : (
+                    <img
+                        className={styles.profilePicture}
+                        src={currentData.profilePicture || defaultAvatar}
+                        alt="Profile Picture"
+                        onError={(e) => {
+                            e.target.src = defaultAvatar;
+                        }}
+                    />
+                )}
                 
-                {currentData.isOwnProfile && (
+                {currentData.isOwnProfile && !isDeletedProfile && (
                     <div
                         className={styles.profilePictureEditOverlay}
                         onClick={handleProfilePictureClick}
@@ -456,29 +472,31 @@ export function ProfileDialog() {
                         autoresizing={true}
                         className={styles.usernameInput}
                         type="text"
-                        value={currentData.display_name}
+                        value={isDeletedProfile ? displayNameForUser(currentData) : currentData.display_name}
                         onChange={handleDisplayNameChange}
                         readOnly={!currentData.isOwnProfile}
                         placeholder="Имя" />
                     
-                    <StatusBadge 
-                        verified={currentData.verified || false}
-                        userId={currentData.userId}
-                        size="large" />
+                    {!isDeletedProfile && (
+                        <StatusBadge
+                            verificationStatus={currentData.verification_status}
+                            verified={currentData.verified || false}
+                            size="large" />
+                    )}
                 </div>
                 {errors.display_name && (
                     <div className={styles.errorMessage}>{errors.display_name}</div>
                 )}
             </div>
 
-            {(currentData?.userId || currentData?.isOwnProfile) && !currentData.deleted && (
+            {(currentData?.userId || currentData?.isOwnProfile) && !isDeletedProfile && (
                 <div className={styles.onlineStatusSection}>
                     <OnlineStatus userId={currentData.userId || user.currentUser!.id} />
                 </div>
             )}
 
             {/* Admin Actions Section - Hide for deleted users */}
-            {!currentData.isOwnProfile && user.currentUser?.id === 1 && !currentData.deleted && (
+            {!currentData.isOwnProfile && user.currentUser?.id === 1 && !isDeletedProfile && (
                 <div className={styles.adminActionsSection}>
                     <h3 className={styles.adminActionsHeader}>Admin Actions</h3>
                     <div className={styles.adminButtons}>
@@ -510,7 +528,7 @@ export function ProfileDialog() {
             )}
 
             {/* Verify button for non-admin owner */}
-            {!currentData.isOwnProfile && currentData.userId && user.currentUser?.id !== 1 && (
+            {!currentData.isOwnProfile && currentData.userId && user.currentUser?.id !== 1 && !isDeletedProfile && (
                 <div className={styles.verifySection}>
                     <VerifyButton 
                         userId={currentData.userId}
@@ -523,7 +541,7 @@ export function ProfileDialog() {
             )}
 
             {/* Hide profile sections for deleted users */}
-            {!currentData.deleted && (
+            {!isDeletedProfile && (
                 <div className={styles.profileSections}>
                     <Section
                         type="username"

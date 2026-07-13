@@ -160,6 +160,22 @@ class DMReaction(Base):
     __table_args__ = (UniqueConstraint('dm_envelope_id', 'user_id', 'emoji', name='unique_dm_reaction'),)
 
 
+class DmConversationPreference(Base):
+    """Per-user DM list preferences (archive state, read cursor)."""
+
+    __tablename__ = "dm_conversation_preference"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False, index=True)
+    other_user_id = Column(Integer, ForeignKey("user.id"), nullable=False, index=True)
+    archived = Column(Boolean, default=False, nullable=False)
+    last_read_envelope_id = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "other_user_id", name="unique_dm_conversation_preference"),
+    )
+
+
 # Tracks authenticated device sessions per user
 class DeviceSession(Base):
     __tablename__ = "device_session"
@@ -202,6 +218,7 @@ class RegisterRequest(BaseModel):
     display_name: str
     password: str
     confirm_password: str
+    bio: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -210,9 +227,19 @@ class ChangePasswordRequest(BaseModel):
     logoutAllExceptCurrent: bool = False
 
 
+class VerifyPasswordRequest(BaseModel):
+    passwordDerived: str
+
+
+class DeleteAccountRequest(BaseModel):
+    passwordDerived: str
+
+
 class SendMessageRequest(BaseModel):
     content: str
     reply_to_id: int | None = None
+    client_message_id: str | None = None
+    uploaded_file_ids: list[str] | None = None
 
 
 class EditMessageRequest(BaseModel):
@@ -270,12 +297,20 @@ class UserProfileResponse(BaseModel):
     last_seen: datetime | None
     created_at: datetime | None
     verified: bool
+    verification_status: str
     suspended: bool
     suspension_reason: str | None
     deleted: bool
 
     class Config:
         from_attributes = True
+
+
+class PublicChatProfileResponse(BaseModel):
+    id: str
+    title: str
+    bio: str | None
+    member_count: int
 
 
 class MessageResponse(BaseModel):

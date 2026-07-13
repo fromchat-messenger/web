@@ -9,6 +9,7 @@ import api from "@/core/api";
 import { AuthTextField, type AuthTextFieldHandle } from "./AuthTextField";
 import type { Alert, AlertType } from "./Auth";
 import { AuthHeader, AlertsContainer } from "./Auth";
+import { LegalInlineLinks } from "@/core/legal/LegalInlineLinks";
 import styles from "./auth.module.scss";
 
 const registerFieldVariants: Variants = {
@@ -235,6 +236,8 @@ export function RegisterForm({ onSwitchMode }: RegisterFormProps) {
                             </MaterialButton>
                         </motion.div>
                     </div>
+
+                    <LegalInlineLinks />
                     
                 </motion.form>
             </div>
