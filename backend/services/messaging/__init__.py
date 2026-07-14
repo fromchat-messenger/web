@@ -1,1 +1,0 @@
-# Messaging service module

@@ -1,4 +1,12 @@
 {
+  "npm.autoDetect": "off",
+  "files.exclude": {
+    ".husky": true,
+    "build": true
+  }
+}
+
+{
     "files.exclude": {
         "**/__pycache__": true,
         "**/package-lock.json": true,

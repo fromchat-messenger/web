@@ -2,45 +2,9 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Backend",
-            "type": "npm",
-            "script": "backend:run",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "group": {
-                "kind": "build"
-            },
-            "isBackground": true
-        },
-        {
             "label": "Frontend (Web)",
-            "type": "npm",
-            "script": "frontend:dev",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "group": {
-                "kind": "build"
-            },
-            "isBackground": true
-        },
-        {
-            "label": "LiveKit",
-            "type": "npm",
-            "script": "livekit:run",
+            "type": "shell",
+            "command": "npm run frontend:dev",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -57,8 +21,8 @@
         },
         {
             "label": "Frontend (Electron)",
-            "type": "npm",
-            "script": "frontend:electron:dev",
+            "type": "shell",
+            "command": "npm run frontend:electron:dev",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -76,25 +40,7 @@
 
         {
             "label": "Web",
-            "dependsOn": ["LiveKit", "Backend", "Frontend (Web)"],
-            "dependsOrder": "parallel",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "runOptions": {
-                "runOn": "folderOpen"
-            }
-        },
-        {
-            "label": "Electron",
-            "dependsOn": ["LiveKit", "Backend", "Frontend (Electron)"],
+            "dependsOn": ["Frontend (Web)"],
             "dependsOrder": "parallel",
             "group": {
                 "kind": "build"
@@ -107,15 +53,17 @@
             }
         },
         {
-            "label": "Deploy",
-            "type": "shell",
-            "command": "npm run deploy",
+            "label": "Electron",
+            "dependsOn": ["Frontend (Electron)"],
+            "dependsOrder": "parallel",
+            "group": {
+                "kind": "build"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
-                "focus": true,
-                "panel": "dedicated",
-                "clear": true
+                "focus": false,
+                "panel": "shared"
             }
         }
     ]

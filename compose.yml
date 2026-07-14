@@ -1,0 +1,12 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.fromchat.ru}
+    env_file:
+      - .env
+    ports:
+      - "8301:80"
+    restart: always

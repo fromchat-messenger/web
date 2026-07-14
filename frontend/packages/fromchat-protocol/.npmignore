@@ -1,8 +1,0 @@
-src/
-tsconfig.json
-node_modules/
-package-lock.json
-*.log
-.DS_Store
-
-
