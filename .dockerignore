@@ -5,6 +5,7 @@
 .github
 .idea
 .vscode
+.cursor
 .DS_Store
 
 # Secrets / local env
