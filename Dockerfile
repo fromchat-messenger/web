@@ -14,12 +14,16 @@ COPY . .
 
 WORKDIR /app
 ARG NODE_ENV=production
+# Overridable at build time. Must be a real http(s) URL — never a compose ${...} stub.
 ARG VITE_API_BASE_URL=https://api.fromchat.ru
-ENV NODE_ENV=production
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
-# 1.3. Build production assets
-RUN npm run frontend:build
+# Fail the build if the arg is not a real URL (e.g. unexpanded Compose ${...}).
+RUN if ! printf "%s" "${VITE_API_BASE_URL}" | grep -Eq '^https?://'; then \
+      echo "ERROR: VITE_API_BASE_URL must be an http(s) URL, got: ${VITE_API_BASE_URL}" >&2; \
+      exit 1; \
+    fi && \
+    export NODE_ENV=production VITE_API_BASE_URL && \
+    npm run frontend:build
 
 
 # 2. Production web static server
