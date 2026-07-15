@@ -4,9 +4,9 @@
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/fromchat-messenger/android/main/app/android/src/main/ic_launcher-playstore.png" width="120" alt="FromChat Logo" />
-  
+
   **Web client for FromChat messenger**
-  
+
   [🌐 Web Client](https://github.com/fromchat-messenger/web) • [🖥️ Backend](https://github.com/fromchat-messenger/backend) • [📱 Android](https://github.com/fromchat-messenger/android) • [🌍 Website](https://github.com/fromchat-messenger/site)
 </div>
 
@@ -14,7 +14,9 @@
 
 ## 📝 Description
 
-FromChat Web Client is a React application for messaging via browser. It's a modern interface for accessing the FromChat server.
+FromChat Web is a React/TypeScript client (browser and Electron) for the FromChat server.
+
+**Note:** Landing pages and legal documents live in [fromchat-messenger/site](https://github.com/fromchat-messenger/site).
 
 ---
 
@@ -22,50 +24,41 @@ FromChat Web Client is a React application for messaging via browser. It's a mod
 
 | Feature | Android | Web | iOS |
 |---|---|---|---|
-| **Messaging & Profiles** | ✅ | ✅ | ✅ |
-| **Voice/Video Calls** | ✅ | ❌ | ❌ |
-| **Screen Sharing** | ✅ | ❌ | ❌ |
-| **Message Reactions** | ❌ | ✅ | ❌ |
-| **Rich Attachment Support** | ✅ | ❌ | ❌ |
+| **Messaging & profiles** | ✅ | ✅ | ❌ |
+| **Voice/video calls** | ✅ | ✅ | ❌ |
+| **Screen sharing** | ✅ | ✅ | ❌ |
+| **Message reactions** | ❌ | ✅ | ❌ |
+| **Rich attachment support** | ✅ | ❌ | ❌ |
 
-**Note:** Landing pages and legal documents are in a separate repository [fromchat-messenger/site](https://github.com/fromchat-messenger/site).
+⚠️ **iOS is temporarily not supported.**
 
 ---
 
 ## ✨ Features
 
-- **Protected Messages** — legal message encryption
-- **Message Reactions** — unique to the web client
-- **Profile Management** — update user data
-- **Device Management** — control active sessions
-- **Public Chats** — join communities
-- **WebSocket** — real-time updates
-- **Dark Mode** — easy on the eyes
-- **Open Source** — full transparency
+- Protected DMs (legal encryption scheme)
+- Voice/video calls and screen sharing
+- Message reactions
+- Public chats and profiles
+- Device management
+- WebSocket real-time updates
+- Dark mode
+- Optional Electron desktop build
 
 ---
 
 ## 🏗️ Tech Stack
 
-| Component | Version |
+| Component | Notes |
 |---|---|
-| React | 19 |
-| TypeScript | latest |
-| Vite | latest |
+| React 19 | UI |
+| TypeScript | strict typing |
+| Vite 7 | dev server & build |
 | MDUI | Material Design |
-| Zustand | state management |
-| Framer Motion | animations |
+| Zustand + use-immer | state |
+| Motion | animations |
 | TweetNaCl.js | cryptography |
-
----
-
-## 🔒 Security
-
-- **Message Encryption** — legal server-side encryption
-- **WebSocket SSL/TLS** — secure connection
-- **Token Management** — secure JWT storage
-- **CORS** — cross-site request protection
-- **Open Source** — full transparency
+| Electron | desktop (optional) |
 
 ---
 
@@ -73,178 +66,116 @@ FromChat Web Client is a React application for messaging via browser. It's a mod
 
 ### Requirements
 
-- Node.js 20+
+- Node.js 20+ (Docker image uses Node 24)
 - npm
-- Backend API running on `http://localhost:8300`
+- Backend API on `http://localhost:8300` (proxied as `/api`)
 
-### Quick Start
-
-**1. Clone repository:**
+### Quick start
 
 ```bash
 git clone https://github.com/fromchat-messenger/web.git
 cd web
-```
-
-**2. Install dependencies:**
-
-```bash
 npm install
+cp .env.example .env   # if needed; install may copy it for you
+npm run frontend:dev
 ```
 
-**3. Configure .env:**
+Open `http://localhost:8301`.
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
+`.env`:
 
 ```env
-# Backend API
-VITE_API_URL=http://localhost:8300
-VITE_WS_URL=ws://localhost:8300
-
-# App settings
-VITE_APP_NAME=FromChat
-VITE_APP_VERSION=1.0.0
+# HTTP API host (Vite proxy target for /api)
+VITE_API_BASE_URL=http://localhost:8300
 ```
 
-**4. Start dev server:**
-
-```bash
-npm run dev
-```
-
-Web client will be available at `http://localhost:8304`
-
-**5. Open in browser:**
-
-Go to `http://localhost:8304` and log in.
+In the browser the client uses same-origin `/api` (HTTP and WebSocket, e.g. `/api/chat/ws`).
 
 ### Commands
 
 ```bash
-# Dev server (with hot reload)
-npm run dev
-
-# Type checking (TypeScript)
-npm run typecheck
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-
-# Lint (code style check)
-npm run lint
+npm run frontend:dev              # Vite on :8301
+npm run frontend:typecheck        # TypeScript
+npm run frontend:build            # typecheck + production build → build/normal
+npm run frontend:preview          # preview built frontend
+npm run frontend:electron:dev     # Electron + Vite
+npm run frontend:electron:build   # Electron package
 ```
 
-### Project Structure
+### Project structure
 
 ```
 web/
 ├── src/
-│   ├── pages/              # Application pages
-│   │   ├── auth/           # Authentication (login, register)
-│   │   ├── chat/           # Chat interface
-│   │   └── profile/        # User profile
-│   ├── core/               # Core business logic
-│   │   ├── api/            # API client
-│   │   ├── calls/          # WebRTC/LiveKit integration
-│   │   ├── websocket.ts    # WebSocket manager
-│   │   └── types.d.ts      # TypeScript definitions
-│   ├── state/              # Zustand stores
-│   ├── utils/              # Utility functions
-│   └── css/                # SCSS modules (Material Design)
-├── vite.config.ts          # Vite configuration
-├── .env.example            # Example environment variables
-└── package.json            # Dependencies
+│   ├── index.html
+│   ├── main/                 # React app (@/)
+│   │   ├── pages/            # auth, chat, profile, …
+│   │   ├── core/             # API, websocket, calls, …
+│   │   ├── state/            # Zustand stores
+│   │   ├── utils/
+│   │   └── css/              # SCSS (Material Design)
+│   ├── electron/             # Electron main/preload
+│   └── protocol/             # shared protocol (@fromchat/protocol)
+├── plugins/                  # Vite plugins
+├── vite.config.ts
+├── compose.yml               # production web image (:8301→80)
+├── Dockerfile
+├── .env.example
+└── package.json
 ```
-
-### API Configuration
-
-Connect to the backend API via `.env`:
-
-```env
-# Development
-VITE_API_URL=http://localhost:8300
-VITE_WS_URL=ws://localhost:8300
-
-# Production
-VITE_API_URL=https://api.fromchat.ru
-VITE_WS_URL=wss://api.fromchat.ru
-```
-
-The API supports both URL variants:
-- `/api/endpoint`
-- `/endpoint` (without prefix)
-
-Both work identically.
 
 ---
 
 ## 🐳 Docker
 
-### Build image
-
 ```bash
 docker build -t fromchat-web:latest .
+# or via compose:
+docker compose --env-file .env up --build
 ```
 
-### Run container
+Container listens on port **8301** (static server on 80 inside).
 
-```bash
-docker run -p 8304:8304 \
-  -e VITE_API_URL=http://localhost:8300 \
-  -e VITE_WS_URL=ws://localhost:8300 \
-  fromchat-web:latest
-```
-
-### Production with Caddy
-
-Web client is automatically routed to `web.fromchat.ru` when using Caddy.
+Production edge (Caddy/HAProxy) is configured via the deployment repo / backend `compose.prod.yml`.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please:
-
-1. Create a branch for your feature
-2. Submit a pull request with description
-3. Ensure TypeScript checks pass: `npm run typecheck`
+1. Branch for your change
+2. Open a PR with a description
+3. Ensure `npm run frontend:typecheck` passes
 
 ---
 
 ## 📄 License
 
-This project is licensed under the GNU Affero General Public License v3.0. See [LICENSE](./LICENSE) for details.
+GNU Affero General Public License v3.0 — see [LICENSE](./LICENSE).
 
 ---
 
 ## 🔗 Related Repositories
 
-- [Backend API](https://github.com/fromchat-messenger/backend) — Python FastAPI server
-- [Android Client](https://github.com/fromchat-messenger/android) — Android application
-- [Website](https://github.com/fromchat-messenger/site) — Landing & legal pages
+- [Backend API](https://github.com/fromchat-messenger/backend)
+- [Android Client](https://github.com/fromchat-messenger/android)
+- [Website](https://github.com/fromchat-messenger/site)
+- [Deployment](https://github.com/fromchat-messenger/deployment)
 
 ---
 
 ## ❓ FAQ
 
-**Q: How do I use the web client?**
-A: Open `http://localhost:8304` in your browser and log in with FromChat credentials.
+**Q: How do I run locally?**  
+A: Start the backend on `:8300`, then `npm run frontend:dev` and open `http://localhost:8301`.
 
-**Q: Which browsers are supported?**
-A: Chrome, Firefox, Safari, Edge (latest versions).
+**Q: Which browsers?**  
+A: Current Chrome, Firefox, Safari, Edge.
 
-**Q: Are video calls supported?**
-A: No, video calls are only available in the Android client. Use Android for calls.
+**Q: Do calls work on web?**  
+A: Yes — voice/video and screen share (server needs LiveKit).
 
-**Q: How do I report a bug?**
-A: Open an issue on GitHub with a description, reproduction steps, and screenshots.
+**Q: How do I report a bug?**  
+A: GitHub Issues with reproduction steps.
 
 ---
 
