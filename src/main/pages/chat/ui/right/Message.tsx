@@ -230,7 +230,7 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
         try {
             // no-op decrypt indicator removed from UI
             // Fetch encrypted file
-            const response = await fetch(file.path, {
+            const response = await fetch(api.files.resolveAttachmentUrl(file.path), {
                 headers: api.user.auth.getAuthHeaders(user.authToken!)
             });
             if (!response.ok) throw new Error("Failed to fetch file");
@@ -425,7 +425,7 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
             }
 
             // If not decrypted or public file, fetch with credentials/headers
-            const response = await fetch(file.path, {
+            const response = await fetch(api.files.resolveAttachmentUrl(file.path), {
                 headers: user.authToken ? api.user.auth.getAuthHeaders(user.authToken) : undefined,
                 credentials: "include"
             });
@@ -585,7 +585,11 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
                                 const looksEncryptedPath = /\/uploads\/files\/encrypted\//.test(file.path) || /\/api\/uploads\/files\/encrypted\//.test(file.path);
                                 const isEncryptedDm = Boolean(isDm && (file.encrypted || looksEncryptedPath));
                                 const decryptedUrl = decryptedFiles.get(file.path);
-                                const imageSrc = isImage ? (isEncryptedDm ? decryptedUrl : file.path) : undefined;
+                                const imageSrc = isImage
+                                    ? (isEncryptedDm
+                                        ? decryptedUrl
+                                        : api.files.resolveAttachmentUrl(file.path))
+                                    : undefined;
                                 const isDownloading = downloadingPaths.has(file.path);
                                 const isSending = message.runtimeData?.sendingState?.status === 'sending';
 
