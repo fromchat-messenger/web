@@ -22,6 +22,16 @@ export function isDeletedPeer(user: {
     return isDeletedUser(user) || isDeletedAccountUsername(user.username);
 }
 
+/** Peers should treat suspended accounts like deleted (no PII). */
+export function isRedactedPeer(user: {
+    id?: number;
+    deleted?: boolean;
+    suspended?: boolean;
+    username?: string | null;
+}): boolean {
+    return isDeletedPeer(user) || isSuspendedUser(user);
+}
+
 export const DELETED_ACCOUNT_LABEL = "Deleted account";
 
 export function deletedUserLabel(): string {
@@ -33,8 +43,9 @@ export function displayNameForUser(user: {
     display_name?: string | null;
     username?: string | null;
     deleted?: boolean;
+    suspended?: boolean;
 }): string {
-    if (isDeletedPeer(user)) {
+    if (isRedactedPeer(user)) {
         return deletedUserLabel();
     }
     return user.display_name?.trim() || user.username?.trim() || "";

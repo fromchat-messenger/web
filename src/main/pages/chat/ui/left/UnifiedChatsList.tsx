@@ -10,7 +10,7 @@ import { onlineStatusManager } from "@/core/onlineStatusManager";
 import { OnlineIndicator } from "@/pages/chat/ui/right/OnlineIndicator";
 import defaultAvatar from "@/images/default-avatar.png";
 import { MaterialBadge, MaterialCircularProgress, MaterialIcon, MaterialList, MaterialListItem } from "@/utils/material";
-import { displayNameForUser, isDeletedPeer } from "@/core/userDisplay";
+import { displayNameForUser, isRedactedPeer } from "@/core/userDisplay";
 import { DeletedUserAvatar } from "@/core/DeletedUserAvatar";
 import styles from "@/pages/chat/css/left-panel.module.scss";
 
@@ -229,7 +229,7 @@ export function UnifiedChatsList() {
                     );
                 }
 
-                const isDeletedDm = isDeletedPeer(chat);
+                const isDeletedDm = isRedactedPeer(chat);
                 const displayName = displayNameForUser({ ...chat, id: chat.id });
 
                 return (

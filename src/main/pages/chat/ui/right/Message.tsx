@@ -14,7 +14,7 @@ import { useImmer } from "use-immer";
 import { createPortal } from "react-dom";
 import { parseProfileLink } from "@/core/profileLinks";
 import { MaterialCircularProgress, MaterialIconButton, MaterialList, MaterialListItem } from "@/utils/material";
-import { displayNameForUser, isDeletedPeer } from "@/core/userDisplay";
+import { displayNameForUser, isRedactedPeer } from "@/core/userDisplay";
 import { DeletedUserAvatar } from "@/core/DeletedUserAvatar";
 import styles from "@/pages/chat/css/Message.module.scss";
 import replyPreviewStyles from "@/pages/chat/css/reply-preview.module.scss";
@@ -519,7 +519,7 @@ export function Message({ message, isAuthor, onContextMenu, onReactionClick, isD
         return messageText.length > 0 && emojiRegex.test(messageText) && messageText.length <= 4; // Most emojis are 1-4 characters
     }, [messageText]);
 
-    const isDeletedSender = isDeletedPeer({ id: message.user_id, username: message.username });
+    const isDeletedSender = isRedactedPeer({ id: message.user_id, username: message.username });
 
     return (
         <>
