@@ -3,7 +3,7 @@ import { getAuthHeaders } from "./account";
 import { request } from "@/core/websocket";
 import type { DmEnvelope, User } from "@/core/types";
 import { fetchUserPublicKey } from "./crypto";
-import { fetchUsers, searchUsers } from "./users";
+import { searchUsers } from "./users";
 
 export async function decryptDm(envelope: DmEnvelope): Promise<string> {
     const { decrypt } = await import("./chats/dm");
@@ -20,7 +20,7 @@ export async function fetchDMHistory(userId: number, token: string, limit: numbe
 }
 
 // Re-export user functions for convenience
-export { fetchUsers, searchUsers, fetchUserPublicKey };
+export { searchUsers, fetchUserPublicKey };
 
 export async function sendDMViaWebSocket(recipientId: number, recipientPublicKeyB64: string, plaintext: string, authToken: string, replyToId?: number): Promise<void> {
     const { send } = await import("./chats/dm");

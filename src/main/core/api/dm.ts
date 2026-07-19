@@ -3,7 +3,7 @@ import { getAuthHeaders } from "./account";
 import { request } from "@/core/websocket";
 import type { DmEnvelope, User } from "@/core/types";
 import { fetchUserPublicKey } from "./crypto";
-import { fetchUsers, searchUsers } from "./users";
+import { searchUsers } from "./users";
 
 /**
  * Decrypt a DM envelope using client-side MEK unwrapping.
@@ -25,7 +25,7 @@ export async function fetchDMHistory(userId: number, token: string, limit: numbe
 }
 
 // Re-export user functions for convenience
-export { fetchUsers, searchUsers, fetchUserPublicKey };
+export { searchUsers, fetchUserPublicKey };
 
 /**
  * Send DM via WebSocket using transport encryption.

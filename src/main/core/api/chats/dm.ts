@@ -5,7 +5,7 @@ import { request } from "@/core/websocket";
 import type { DmEnvelope, User } from "@/core/types";
 import { ub64 } from "@/utils/utils";
 import { fetchUserPublicKey } from "../crypto/identity";
-import { fetchUsers, searchUsers } from "../user/search";
+import { searchUsers } from "../user/search";
 import { deriveWrappingKey, importAesGcmKey, aesGcmDecrypt } from "@fromchat/protocol";
 import tweetnacl from "tweetnacl";
 
@@ -320,4 +320,4 @@ export async function editMessage(
 }
 
 // Re-export user functions for convenience
-export { fetchUsers, searchUsers, fetchUserPublicKey };
+export { searchUsers, fetchUserPublicKey };
