@@ -71,10 +71,10 @@ export async function checkAuth(token: string): Promise<CheckAuthResponse> {
 }
 
 /**
- * Logs in a user with username and password
+ * Logs in a user with username and password (step-based auth).
  */
 export async function login(request: LoginRequest): Promise<LoginResponse> {
-    const res = await fetch(`${API_BASE_URL}/login`, {
+    const res = await fetch(`${API_BASE_URL}/auth/steps/password`, {
         method: "POST",
         headers: getAuthHeaders(null, true),
         body: JSON.stringify(request)
@@ -83,17 +83,28 @@ export async function login(request: LoginRequest): Promise<LoginResponse> {
         const error = await res.json().catch(() => ({ detail: "Login failed" }));
         throw new Error(error.detail || "Login failed");
     }
-    return await res.json();
+    const data = await res.json();
+    if (data.status === "needs_register") {
+        throw new Error("Account not found");
+    }
+    return data;
 }
 
 /**
- * Registers a new user
+ * Registers a new user (step-based auth; Yandex proof required when enabled on server).
  */
-export async function register(request: RegisterRequest): Promise<LoginResponse> {
-    const res = await fetch(`${API_BASE_URL}/register`, {
+export async function register(request: RegisterRequest & { registration_proof?: string }): Promise<LoginResponse> {
+    const res = await fetch(`${API_BASE_URL}/auth/steps/register/confirm`, {
         method: "POST",
         headers: getAuthHeaders(null, true),
-        body: JSON.stringify(request)
+        body: JSON.stringify({
+            display_name: request.display_name,
+            username: request.username,
+            password: request.password,
+            confirm_password: request.confirm_password,
+            bio: request.bio,
+            registration_proof: request.registration_proof,
+        })
     });
     if (!res.ok) {
         const error = await res.json().catch(() => ({ detail: "Registration failed" }));
