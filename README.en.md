@@ -7,14 +7,14 @@
 
   **Web client for FromChat messenger**
 
-  [🌐 Web Client](https://github.com/fromchat-messenger/web) • [🖥️ Backend](https://github.com/fromchat-messenger/backend) • [📱 Android](https://github.com/fromchat-messenger/android) • [🌍 Website](https://github.com/fromchat-messenger/site)
+  [🌐 Web Client](https://github.com/fromchat-messenger/web) • [🖥️ Backend](https://github.com/fromchat-messenger/backend) • [📱 Android / Desktop](https://github.com/fromchat-messenger/android) • [🌍 Website](https://github.com/fromchat-messenger/site)
 </div>
 
 ---
 
 ## 📝 Description
 
-FromChat Web is a React/TypeScript client (browser and Electron) for the FromChat server.
+FromChat Web is a React/TypeScript browser client for the FromChat server. The desktop client is Compose Multiplatform in the [Android/KMP repository](https://github.com/fromchat-messenger/android).
 
 **Note:** Landing pages and legal documents live in [fromchat-messenger/site](https://github.com/fromchat-messenger/site).
 
@@ -43,7 +43,6 @@ FromChat Web is a React/TypeScript client (browser and Electron) for the FromCha
 - Device management
 - WebSocket real-time updates
 - Dark mode
-- Optional Electron desktop build
 
 ---
 
@@ -58,7 +57,6 @@ FromChat Web is a React/TypeScript client (browser and Electron) for the FromCha
 | Zustand + use-immer | state |
 | Motion | animations |
 | TweetNaCl.js | cryptography |
-| Electron | desktop (optional) |
 
 ---
 
@@ -98,8 +96,6 @@ npm run frontend:dev              # Vite on :8301
 npm run frontend:typecheck        # TypeScript
 npm run frontend:build            # typecheck + production build → build/normal
 npm run frontend:preview          # preview built frontend
-npm run frontend:electron:dev     # Electron + Vite
-npm run frontend:electron:build   # Electron package
 ```
 
 ### Project structure
@@ -114,7 +110,6 @@ web/
 │   │   ├── state/            # Zustand stores
 │   │   ├── utils/
 │   │   └── css/              # SCSS (Material Design)
-│   ├── electron/             # Electron main/preload
 │   └── protocol/             # shared protocol (@fromchat/protocol)
 ├── plugins/                  # Vite plugins
 ├── vite.config.ts
@@ -157,7 +152,7 @@ GNU Affero General Public License v3.0 — see [LICENSE](./LICENSE).
 ## 🔗 Related Repositories
 
 - [Backend API](https://github.com/fromchat-messenger/backend)
-- [Android Client](https://github.com/fromchat-messenger/android)
+- [Android / Desktop (KMP)](https://github.com/fromchat-messenger/android)
 - [Website](https://github.com/fromchat-messenger/site)
 - [Deployment](https://github.com/fromchat-messenger/deployment)
 

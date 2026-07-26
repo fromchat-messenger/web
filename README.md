@@ -6,7 +6,7 @@ _Написано ИИ. Могут быть ошибки._
 
 ## 📝 Описание
 
-Веб-клиент FromChat — React/TypeScript приложение (браузер и Electron) для работы с сервером FromChat.
+Веб-клиент FromChat — React/TypeScript приложение для браузера. Десктоп-клиент — Compose Multiplatform в [Android/KMP репозитории](https://github.com/fromchat-messenger/android).
 
 ## Развернуть в 1 клик
 
@@ -23,7 +23,6 @@ docker run -d --restart always -p 8301:80 fromchat/web:latest
 - Управление устройствами
 - WebSocket для реал-тайма
 - Тёмный режим
-- Сборка Electron (опционально)
 
 ## 🏗️ Технологический стек
 
@@ -36,7 +35,6 @@ docker run -d --restart always -p 8301:80 fromchat/web:latest
 | Zustand + use-immer | состояние |
 | Motion | анимации |
 | TweetNaCl.js | криптография |
-| Electron | десктоп (опционально) |
 
 ## 🔧 Разработка
 
@@ -65,8 +63,6 @@ npm run frontend:dev              # Vite на :8301
 npm run frontend:typecheck        # TypeScript
 npm run frontend:build            # typecheck + production build → build/normal
 npm run frontend:preview          # preview собранного фронта
-npm run frontend:electron:dev     # Electron + Vite
-npm run frontend:electron:build   # сборка Electron
 ```
 
 ### Структура проекта
@@ -81,7 +77,6 @@ web/
 │   │   ├── state/            # Zustand stores
 │   │   ├── utils/
 │   │   └── css/              # SCSS (Material Design)
-│   ├── electron/             # main/preload Electron
 │   └── protocol/             # общий протокол (@fromchat/protocol)
 ├── plugins/                  # Vite-плагины
 ├── vite.config.ts
@@ -112,6 +107,6 @@ GNU Affero General Public License v3.0 — см. [LICENSE](./LICENSE).
 ## 🔗 Связанные репозитории
 
 - [Backend API](https://github.com/fromchat-messenger/backend)
-- [Android Client](https://github.com/fromchat-messenger/android)
+- [Android / Desktop (KMP)](https://github.com/fromchat-messenger/android)
 - [Website](https://github.com/fromchat-messenger/site)
 - [Deployment](https://github.com/fromchat-messenger/deployment)

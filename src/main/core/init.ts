@@ -7,7 +7,8 @@
 
 import { PRODUCT_NAME } from "./config";
 import { enableMapSet } from "immer";
-import type { Platform } from "../../electron/electron.d";
+
+type Platform = "win32" | "darwin" | "linux";
 
 function detectPlatform(): Platform {
     const userAgent = navigator.userAgent.toLowerCase();

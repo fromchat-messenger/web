@@ -39,9 +39,8 @@ When working with this project, follow these rules:
 - NEVER create database migrations, they are auto-generated.
 
 ## Project Structure Awareness
-- This is a React/TypeScript frontend with Python FastAPI backend
+- This is a React/TypeScript browser frontend (desktop is Compose Multiplatform in the Android/KMP repo)
 - Uses MDUI components for UI
-- Has Electron support for desktop app
 - Uses Zustand for state management
 - Uses use-immer for immutable state updates
 - Uses React Router for navigation

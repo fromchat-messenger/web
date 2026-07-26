@@ -2,8 +2,7 @@ import { create } from "zustand";
 import type { User } from "@/core/types";
 import api from "@/core/api";
 import { API_BASE_URL } from "@/core/config";
-import { initialize, subscribe, startElectronReceiver, isSupported } from "@/core/push-notifications/push-notifications";
-import { isElectron } from "@/core/electron/electron";
+import { initialize, subscribe, isSupported } from "@/core/push-notifications/push-notifications";
 import { onlineStatusManager } from "@/core/onlineStatusManager";
 import { typingManager } from "@/core/typingManager";
 import type { UserState } from "./types";
@@ -126,10 +125,6 @@ export const useUserStore = create<UserStore>((set) => ({
                             const initialized = await initialize();
                             if (initialized) {
                                 await subscribe(token);
-
-                                if (isElectron) {
-                                    await startElectronReceiver();
-                                }
                             }
                         }
                     } catch (e) {

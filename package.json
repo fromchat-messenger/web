@@ -3,7 +3,6 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
-    "main": "build/electron/core/main.js",
     "description": "A 100% Open Source Messenger",
     "license": "GPL-3.0",
     "authors": "denis0001-dev",
@@ -11,38 +10,23 @@
         "frontend:dev": "vite",
         "frontend:typecheck": "tsc --project tsconfig.json",
         "frontend:build": "npm run frontend:typecheck && vite build",
-        "frontend:electron:dev": "VITE_ELECTRON=true npm run frontend:dev",
-        "frontend:electron:build": "VITE_ELECTRON=true npm run frontend:build && rm -rf out && electron-forge make --force --arch arm64,x64",
         "frontend:preview": "vite preview",
         "frontend:dependencies": "npm install --ignore-scripts",
         "frontend:clean": "rm -rf build",
-        "build:electron": "npm run frontend:electron:build",
-        "build": "npm run frontend:build && npm run build:electron",
+        "build": "npm run frontend:build",
         "preview": "docker compose -f docker-compose.yml up --build --watch",
         "preview:clean": "docker compose -f docker-compose.yml down -v --remove-orphans",
         "prepare": "husky",
         "install": "if [ ! -e .env ]; then cp .env.example .env; fi"
     },
-    "files": [
-        "build/electron"
-    ],
     "devDependencies": {
-        "@electron-forge/cli": "^7.9.0",
-        "@electron-forge/maker-deb": "^7.9.0",
-        "@electron-forge/maker-dmg": "^7.9.0",
-        "@electron-forge/maker-rpm": "^7.9.0",
-        "@electron-forge/maker-squirrel": "^7.9.0",
-        "@electron-forge/maker-zip": "^7.9.0",
-        "@electron-forge/plugin-auto-unpack-natives": "^7.9.0",
-        "@electron-forge/plugin-fuses": "^7.9.0",
-        "@electron/fuses": "^1.0.0",
         "@types/he": "^1.2.3",
+        "@types/node": "^26.1.1",
         "@types/react": "^19.1.13",
         "@types/react-dom": "^19.1.9",
         "@vitejs/plugin-react": "^5.0.3",
         "autoprefixer": "^10.4.21",
         "dotenv-cli": "^11.0.0",
-        "electron": "^39.2.7",
         "husky": "^9.1.7",
         "postcss": "^8.5.6",
         "rollup-plugin-visualizer": "^6.0.4",
@@ -51,13 +35,10 @@
         "terser": "^5.44.0",
         "typescript": "~5.9.2",
         "vite": "^7.1.6",
-        "vite-plugin-electron": "^0.29.0",
-        "vite-plugin-electron-renderer": "^0.14.6",
         "vite-plugin-html": "^3.2.2",
         "vite-plugin-sass-dts": "^1.3.34"
     },
     "dependencies": {
-        "electron-squirrel-startup": "^1.0.1",
         "escape-string-regexp": "^5.0.0",
         "he": "^1.2.0",
         "idb": "^8.0.3",
@@ -70,8 +51,5 @@
         "tweetnacl": "^1.0.3",
         "use-immer": "^0.11.0",
         "zustand": "^5.0.8"
-    },
-    "config": {
-        "forge": "src/electron/forge.config.ts"
     }
 }

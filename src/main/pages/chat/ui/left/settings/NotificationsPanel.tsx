@@ -2,7 +2,6 @@ import { useState, useRef } from "react";
 import { MaterialList, MaterialListItem, MaterialSwitch, type MDUISwitch } from "@/utils/material";
 import { useUserStore } from "@/state/user";
 import { initialize, subscribe, unsubscribe, isSupported } from "@/core/push-notifications/push-notifications";
-import { isElectron } from "@/core/electron/electron";
 import api from "@/core/api";
 import styles from "@/pages/chat/css/settings-dialog.module.scss";
 
@@ -23,12 +22,7 @@ export function NotificationsPanel() {
 
         setChecking(true);
         try {
-            let permission: string;
-            if (isElectron) {
-                permission = await window.electronInterface.notifications.requestPermission();
-            } else {
-                permission = Notification.permission;
-            }
+            const permission = Notification.permission;
             console.log("checkPushStatus", permission);
             setPushEnabled(permission === "granted");
         } catch (error) {

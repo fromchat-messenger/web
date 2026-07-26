@@ -7,8 +7,7 @@ import { useUserStore } from "@/state/user";
 import { MaterialButton } from "@/utils/material";
 import api from "@/core/api";
 import { AuthTextField, type AuthTextFieldHandle } from "./AuthTextField";
-import { initialize, isSupported, startElectronReceiver, subscribe } from "@/core/push-notifications/push-notifications";
-import { isElectron } from "@/core/electron/electron";
+import { initialize, isSupported, subscribe } from "@/core/push-notifications/push-notifications";
 import type { Alert, AlertType } from "./Auth";
 import { AuthHeader, AlertsContainer } from "./Auth";
 import styles from "./auth.module.scss";
@@ -115,11 +114,6 @@ export function LoginForm({ onSwitchMode }: LoginFormProps) {
                         const initialized = await initialize();
                         if (initialized) {
                             await subscribe(data.token);
-
-                            if (isElectron) {
-                                await startElectronReceiver();
-                            }
-
                             console.log("Notifications enabled");
                         } else {
                             console.log("Notification permission denied");

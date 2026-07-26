@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, matchRoutes, Navigate, type RouteObject } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { ElectronTitleBar } from "./Electron";
 import { useUserStore } from "./state/user";
 import { lazy, useEffect, useRef, useState } from "react";
 import { parseProfileLink } from "./core/profileLinks";
@@ -133,7 +132,6 @@ export default function App() {
     
     return authReady && (
         <BrowserRouter>
-            <ElectronTitleBar />
             <AlertDialogProvider />
             <div id="main-wrapper">
                 <AnimatedRoutes />

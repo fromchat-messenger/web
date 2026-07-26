@@ -31,6 +31,6 @@
         "jsx": "react-jsx",
         "jsxImportSource": "react"
     },
-    "include": ["src", "src/electron/electron.d.ts", "src/protocol"],
+    "include": ["src", "src/protocol"],
     "exclude": ["**/__*/**", "__*"]
 }

@@ -17,7 +17,6 @@ node_modules
 npm-debug.log
 .vite
 dist
-dist-electron
 build
 out
 coverage
