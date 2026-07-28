@@ -599,3 +599,5 @@ backend/files
 
 !scripts/offline_python_linux_amd64/venv_linux_amd64/venv/
 !scripts/offline_python_linux_amd64/venv_linux_amd64/venv/lib
+
+*.module.d.scss.ts
