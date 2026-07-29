@@ -78,7 +78,9 @@ web/
 │   │   ├── utils/
 │   │   └── css/              # SCSS (Material Design)
 │   └── protocol/             # общий протокол (@fromchat/protocol)
-├── plugins/                  # Vite-плагины
+├── plugins/              # Vite-плагины
+|    ├── OptimizeCssModules.ts
+|    └── OptimizeSvg.ts
 ├── vite.config.ts
 ├── compose.yml               # production-образ веба (:8301→80)
 ├── Dockerfile
