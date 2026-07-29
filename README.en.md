@@ -112,6 +112,8 @@ web/
 │   │   └── css/              # SCSS (Material Design)
 │   └── protocol/             # shared protocol (@fromchat/protocol)
 ├── plugins/                  # Vite plugins
+|    ├── OptimizeCssModules.ts
+|    └── OptimizeSvg.ts
 ├── vite.config.ts
 ├── compose.yml               # production web image (:8301→80)
 ├── Dockerfile
