@@ -18,21 +18,19 @@ FromChat Web is a React/TypeScript browser client for the FromChat server. The d
 
 **Note:** Landing pages and legal documents live in [fromchat-messenger/site](https://github.com/fromchat-messenger/site).
 
----
-
 ## 📊 Client Comparison
 
+⚠️ **iOS is temporarily not supported** (Apple restrictions and workload). The client will be released later.
+
 | Feature | Android | Web | iOS |
-|---|---|---|---|
-| **Messaging & profiles** | ✅ | ✅ | ❌ |
+| --- | --- | --- | --- |
+| **Messaging and profiles** | ✅ | ✅ | ❌ |
 | **Voice/video calls** | ✅ | ✅ | ❌ |
 | **Screen sharing** | ✅ | ✅ | ❌ |
-| **Message reactions** | ❌ | ✅ | ❌ |
-| **Rich attachment support** | ✅ | ❌ | ❌ |
+| **Reactions to messages** | ❌ | ✅ | ❌ |
+| **Advanced attachment support** | ✅ | ❌ | ❌ |
 
-⚠️ **iOS is temporarily not supported.**
-
----
+--- 
 
 ## ✨ Features
 
