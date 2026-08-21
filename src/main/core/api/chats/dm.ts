@@ -277,7 +277,7 @@ export async function markRead(id: number, authToken: string): Promise<void> {
     await request({
         type: "dmMarkRead",
         credentials: { scheme: "Bearer", credentials: authToken },
-        data: { id }
+        data: { messageIds: [id] }
     });
 }
 
