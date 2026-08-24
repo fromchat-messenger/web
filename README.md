@@ -8,6 +8,18 @@ _Написано ИИ. Могут быть ошибки._
 
 Веб-клиент FromChat — React/TypeScript приложение для браузера. Десктоп-клиент — Compose Multiplatform в [Android/KMP репозитории](https://github.com/fromchat-messenger/android).
 
+## 📊 Сравнение клиентов
+
+⚠️ **iOS временно не поддерживается** (ограничения Apple и объём работы). Клиент выйдет позже.
+
+| Возможность | Android | Web | iOS |
+| --- | --- | --- | --- |
+| **Обмен сообщениями и профили** | ✅ | ✅ | ❌ |
+| **Голосовые/видеозвонки** | ✅ | ✅ | ❌ |
+| **Демонстрация экрана** | ✅ | ✅ | ❌ |
+| **Реакции на сообщения** | ❌ | ✅ | ❌ |
+| **Расширенная поддержка вложений** | ✅ | ❌ | ❌ |
+
 ## Развернуть в 1 клик
 
 ```bash
@@ -78,7 +90,9 @@ web/
 │   │   ├── utils/
 │   │   └── css/              # SCSS (Material Design)
 │   └── protocol/             # общий протокол (@fromchat/protocol)
-├── plugins/                  # Vite-плагины
+├── plugins/              # Vite-плагины
+|    ├── OptimizeCssModules.ts
+|    └── OptimizeSvg.ts
 ├── vite.config.ts
 ├── compose.yml               # production-образ веба (:8301→80)
 ├── Dockerfile
