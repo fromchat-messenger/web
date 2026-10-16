@@ -8,20 +8,22 @@ export default function DownloadAppPage() {
             <div className={styles.downloadAppCard}>
                 <h1>Скачайте приложение</h1>
                 <p>
-                    Этот сайт не предназначен для работы на маленьких экранах.
-                    Выберите вашу платформу:
+                    Веб-версия рассчитана на большой экран. Для телефона используйте нативный клиент —
+                    Android поддерживается активно.
                 </p>
                 <div className={styles.downloadAppButtons}>
                     <a href="/download?os=android" className={styles.downloadAppBtn}>
                         <MaterialIcon name="android" />
                         Android
                     </a>
-                    <a href="/download?os=ios" className={styles.downloadAppBtn}>
+                    <a href="/download?os=ios" className={styles.downloadAppBtnSecondary}>
                         <MaterialIcon name="phone_iphone" />
-                        iOS
+                        iOS (сайдлоад)
                     </a>
                 </div>
                 <p>
+                    <Link to="/">На главную</Link>
+                    {" · "}
                     <Link to="/privacy">Политика конфиденциальности</Link>
                     {" · "}
                     <Link to="/terms">Пользовательское соглашение</Link>

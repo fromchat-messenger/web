@@ -1,0 +1,61 @@
+@use "@/css/material" as *;
+
+.codeBlock {
+    position: relative;
+    background: $color-dark-surface-container-lowest;
+    border-radius: 20px;
+    padding: 18px 48px 18px 22px;
+    text-align: left;
+    max-width: 640px;
+    width: 100%;
+}
+
+.pre {
+    margin: 0;
+    overflow-x: auto;
+    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: $color-dark-on-surface;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.copyButton {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    opacity: 0.72;
+
+    &:hover {
+        opacity: 1;
+    }
+}
+
+.tokenCommand {
+    color: $color-dark-primary;
+    font-weight: 600;
+}
+
+.tokenSubcommand {
+    color: $color-dark-tertiary;
+}
+
+.tokenFlag {
+    color: $color-dark-secondary;
+}
+
+.tokenUrl {
+    color: $color-dark-primary;
+    text-decoration: underline;
+    text-decoration-color: rgba($color-dark-primary, 0.35);
+    text-underline-offset: 2px;
+}
+
+.tokenPath {
+    color: $color-dark-on-surface-variant;
+}
+
+.tokenArg {
+    color: $color-dark-on-surface;
+}

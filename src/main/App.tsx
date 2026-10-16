@@ -12,6 +12,7 @@ import { delay } from "./utils/utils";
 
 // Lazy load route components
 const HomePage = lazy(() => import("./pages/home/HomePage"));
+const DesktopPage = lazy(() => import("./pages/desktop/DesktopPage"));
 const AuthPage = lazy(() => import("./pages/auth/AuthPage"));
 const ChatPage = lazy(() => import("./pages/chat/ui/ChatPage"));
 const PrivacyPage = lazy(() => import("./pages/legal/LegalPages").then(m => ({ default: m.PrivacyPage })));
@@ -19,6 +20,7 @@ const TermsPage = lazy(() => import("./pages/legal/LegalPages").then(m => ({ def
 
 const routeConfig: RouteObject[] = [
     { path: "/", element: <HomePage /> },
+    { path: "/desktop", element: <DesktopPage /> },
     { path: "/auth", element: <AuthPage /> },
     { path: "/login", element: <Navigate to="/auth?mode=login" replace /> },
     { path: "/register", element: <Navigate to="/auth?mode=register" replace /> },

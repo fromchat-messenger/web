@@ -1,103 +1,86 @@
 import { Link } from "react-router-dom";
 import { MaterialIcon } from "@/utils/material";
-import { GitHubLink, GITHUB_WEB, GITHUB_APP, GITHUB_LICENSE } from "@/pages/home/homeLinks";
+import {
+    FOOTER_COLUMNS,
+    type FooterLinkItem,
+} from "@/pages/home/footerLinks";
 import styles from "@/pages/home/home-footer.module.scss";
 
 interface HomeFooterProps {
     onScrollToDownload?: () => void;
 }
 
+function FooterLink({ item, onScrollToDownload }: { item: FooterLinkItem; onScrollToDownload?: () => void }) {
+    const icon = item.iconSvg ? (
+        <span
+            className={`${styles.footerLinkIcon} ${styles.footerLinkIconSvg} ${styles[item.iconSvg]}`}
+        />
+    ) : item.icon ? (
+        <MaterialIcon name={item.icon} className={styles.footerLinkIcon} />
+    ) : null;
+
+    if (item.action === "scroll-download") {
+        return (
+            <button type="button" className={styles.footerLink} onClick={onScrollToDownload}>
+                {icon}
+                {item.label}
+            </button>
+        );
+    }
+
+    if (item.external) {
+        return (
+            <a
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.footerLink}
+            >
+                {icon}
+                {item.label}
+            </a>
+        );
+    }
+
+    return (
+        <Link to={item.href!} className={styles.footerLink}>
+            {icon}
+            {item.label}
+        </Link>
+    );
+}
+
 export function HomeFooter({ onScrollToDownload }: HomeFooterProps) {
     return (
         <footer className={styles.homepageFooter}>
-            <div className={styles.footerBrand}>
-                <div className={styles.footerLogoRow}>
-                    <div className={styles.footerLogo} />
-                    <span className={styles.footerBrandName}>FromChat</span>
+            <div className={styles.footerInner}>
+                <div className={styles.footerBrand}>
+                    <div className={styles.footerLogoRow}>
+                        <div className={styles.footerLogo} aria-hidden />
+                        <span className={styles.footerBrandName}>FromChat</span>
+                    </div>
+                    <p className={styles.footerCopyright}>
+                        <span>FromChat</span>
+                        <span className={styles.footerCopyrightSymbol} aria-hidden="true">
+                            ©
+                        </span>
+                        <span>2026</span>
+                    </p>
                 </div>
-                <p className={styles.footerCopyright}>FromChat © 2026</p>
-            </div>
-            <div className={styles.footerLinks}>
-                <div className={styles.footerSection}>
-                    <button
-                        type="button"
-                        onClick={onScrollToDownload}
-                        className={styles.footerLink}
-                    >
-                        <MaterialIcon name="download" className={styles.footerLinkIcon} />
-                        Скачать приложение
-                    </button>
-                    <Link to="/login" className={styles.footerLink}>
-                        <MaterialIcon name="language" className={styles.footerLinkIcon} />
-                        Веб-версия
-                    </Link>
-                    <a
-                        href={`${GITHUB_WEB}/actions/workflows/build.yml`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.footerLink}
-                    >
-                        <MaterialIcon name="computer" className={styles.footerLinkIcon} />
-                        ПК-клиент
-                    </a>
-                </div>
-                <div className={styles.footerSection}>
-                    <a
-                        href={`${GITHUB_APP}/tree/main`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.footerLink}
-                    >
-                        <MaterialIcon name="android" className={styles.footerLinkIcon} />
-                        Исходный код приложения
-                    </a>
-                    <GitHubLink className={styles.footerLink}>
-                        <MaterialIcon name="code" className={styles.footerLinkIcon} />
-                        Исходный код веб-версии
-                    </GitHubLink>
-                    <a
-                        href={GITHUB_LICENSE}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.footerLink}
-                    >
-                        <MaterialIcon name="description" className={styles.footerLinkIcon} />
-                        Лицензия
-                    </a>
-                </div>
-                <div className={styles.footerSection}>
-                    <Link to="/privacy" className={styles.footerLink}>
-                        <MaterialIcon name="shield" className={styles.footerLinkIcon} />
-                        Политика конфиденциальности
-                    </Link>
-                    <Link to="/terms" className={styles.footerLink}>
-                        <MaterialIcon name="description" className={styles.footerLinkIcon} />
-                        Пользовательское соглашение
-                    </Link>
-                </div>
-                <div className={styles.footerSection}>
-                    <a
-                        href="https://t.me/fromchat_ch"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.footerLink}
-                    >
-                        <span
-                            className={`${styles.footerLinkIcon} ${styles.footerLinkIconSvg} ${styles.footerLinkIconSvgTelegram}`}
-                        />
-                        Telegram
-                    </a>
-                    <a
-                        href="https://max.ru/join/c5t6LfnCCPetQSAOshmouEvq9vsjHZT_Lt63kw8YCg0"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.footerLink}
-                    >
-                        <span
-                            className={`${styles.footerLinkIcon} ${styles.footerLinkIconSvg} ${styles.footerLinkIconSvgMax}`}
-                        />
-                        MAX
-                    </a>
+
+                <div className={styles.footerGrid}>
+                    {FOOTER_COLUMNS.map((column) => (
+                        <div key={column.title} className={styles.footerColumn}>
+                            <h3 className={styles.footerColumnTitle}>{column.title}</h3>
+                            <ul className={styles.footerColumnList}>
+                                {column.links.map((item) => (
+                                    <li key={item.label}>
+                                        <FooterLink item={item} onScrollToDownload={onScrollToDownload} />
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ))}
                 </div>
             </div>
         </footer>

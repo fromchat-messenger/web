@@ -68,3 +68,9 @@
     }
 }
 
+.downloadAppBtnSecondary {
+    @extend .downloadAppBtn;
+    opacity: 0.75;
+    font-weight: 500;
+}
+

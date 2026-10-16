@@ -1,0 +1,169 @@
+@use "../home/home-shared" as shared;
+@use "@/css/material" as *;
+
+.desktopPage {
+    padding-bottom: 48px;
+}
+
+.hero {
+    text-align: center;
+    padding-block: 64px 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.heroScreenshot {
+    width: min(100%, 720px);
+    border-radius: 16px;
+    border: 1px solid $color-dark-outline-variant;
+    overflow: hidden;
+    margin-bottom: 8px;
+
+    img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+}
+
+.heroTitle {
+    @include shared.marketing-headline;
+    max-width: 20ch;
+}
+
+.heroBody {
+    @include shared.marketing-body;
+    max-width: 40rem;
+}
+
+.heroActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+}
+
+.sectionBlock {
+    @include shared.section-container;
+    padding-top: 48px;
+    padding-bottom: 48px;
+}
+
+.sectionTitle {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 600;
+    color: $color-dark-on-background;
+    margin: 0 0 16px;
+}
+
+.sectionBody {
+    @include shared.marketing-body;
+    margin-bottom: 24px;
+    max-width: 40rem;
+}
+
+.benefitsList {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: $color-dark-on-surface-variant;
+    line-height: 1.7;
+
+    li + li {
+        margin-top: 8px;
+    }
+}
+
+.installNote {
+    margin-top: 24px;
+    padding: 16px 20px;
+    border-radius: 12px;
+    background: $color-dark-surface-container-low;
+    border: 1px solid $color-dark-outline-variant;
+    color: $color-dark-on-surface-variant;
+    line-height: 1.6;
+    font-size: 0.9375rem;
+
+    strong {
+        color: $color-dark-on-surface;
+    }
+}
+
+.crossLink {
+    margin-top: 32px;
+    font-size: 0.9375rem;
+
+    a {
+        color: $color-dark-primary;
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+}
+
+.downloadGroup {
+    margin-top: 24px;
+}
+
+.downloadGroupLabel {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: $color-dark-on-surface-variant;
+    margin-bottom: 12px;
+}
+
+.downloadList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.downloadRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: $color-dark-surface-container-low;
+}
+
+.downloadRowInfo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.tableOsIcon {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    background-color: $color-dark-on-surface-variant;
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+}
+
+.downloadRowText {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.downloadRowName {
+    font-weight: 500;
+    color: $color-dark-on-surface;
+}
+
+.downloadRowDesc {
+    font-size: 0.875rem;
+    color: $color-dark-on-surface-variant;
+}

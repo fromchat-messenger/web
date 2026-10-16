@@ -1,0 +1,64 @@
+@use "@/css/material" as *;
+
+.bannerCollapse {
+    overflow: hidden;
+    will-change: height, opacity;
+}
+
+.bannerShell {
+    display: flex;
+    justify-content: center;
+    padding: 12px clamp(20px, 4vw, 32px) 0;
+}
+
+.bannerPill {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    max-width: min(100%, 920px);
+    background: rgba($color-dark-error-container, 0.48);
+    border-radius: 999px;
+    padding: 6px 6px 6px 18px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    outline: none;
+
+    &:hover {
+        background: rgba($color-dark-error-container, 0.58);
+    }
+
+    &:focus-visible {
+        box-shadow: 0 0 0 2px rgba($color-dark-error, 0.45);
+    }
+
+    @media (max-width: 640px) {
+        align-items: flex-start;
+        border-radius: 24px;
+        padding: 10px 8px 10px 14px;
+    }
+}
+
+.bannerText {
+    display: inline;
+    color: $color-dark-on-error-container;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    min-width: 0;
+
+    @media (max-width: 640px) {
+        display: block;
+        padding-right: 4px;
+    }
+}
+
+.bannerTimer {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: $color-dark-error;
+    white-space: nowrap;
+}
+
+.bannerClose {
+    flex-shrink: 0;
+    --mdui-color-on-surface: #{$color-dark-on-error-container};
+}

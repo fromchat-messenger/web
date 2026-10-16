@@ -2,23 +2,17 @@
 @use "home-shared" as shared;
 
 .homepageFooter {
-    padding: 0 16px;
+    border-top: 1px solid rgba($color-dark-outline-variant, 0.35);
     background: $color-dark-surface;
-    display: flex;
-    flex-direction: row;
-    gap: 32px;
-    max-width: 1000px;
-    margin-left: auto;
-    margin-right: auto;
-    align-items: center;
-    justify-content: center;
-    padding-bottom: 48px;
+    padding: 48px clamp(20px, 4vw, 32px) 56px;
+}
 
-    @media (max-width: 635px) {
-        flex-direction: column-reverse;
-        align-items: flex-start;
-        padding: 32px;
-    }
+.footerInner {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
 }
 
 .footerBrand {
@@ -37,7 +31,7 @@
 .footerLogo {
     width: 40px;
     height: 40px;
-    background-image: url('@/images/logo_square.svg');
+    background-image: url("@/images/logo_square.svg");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -45,93 +39,100 @@
 }
 
 .footerBrandName {
-    font-size: 32px;
-    font-weight: 700;
-    @include shared.gradient-text;
+    font-size: 1.75rem;
+    line-height: 1;
+    @include shared.brand-wordmark;
     user-select: none;
 }
 
 .footerCopyright {
-    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    font-size: 0.875rem;
+    line-height: 1;
     color: $color-dark-on-surface-variant;
-    opacity: 0.8;
     margin: 0;
 }
 
-.footerLinks {
-    display: flex;
-    gap: 32px;
-    flex-wrap: wrap;
+.footerCopyrightSymbol {
+    display: inline-block;
+    font-size: 1.45em;
+    line-height: 1;
+    transform: translateY(0.04em);
 }
 
-.footerSection {
+.footerGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(max-content, 1fr));
+    gap: 32px 24px;
+
+    @media (max-width: 768px) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 28px 20px;
+    }
+}
+
+.footerColumn {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
     gap: 12px;
+    min-width: max-content;
+
+    @media (max-width: 768px) {
+        min-width: 0;
+    }
+}
+
+.footerColumnTitle {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: $color-dark-on-surface;
+}
+
+.footerColumnList {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .footerLink {
-    display: flex;
+    display: inline-flex;
     flex-direction: row;
     align-items: center;
     gap: 8px;
     color: $color-dark-on-surface-variant;
     text-decoration: none;
-    font-size: 15px;
+    font-size: 0.9375rem;
     background: none;
     border: none;
     padding: 0;
     cursor: pointer;
     font-family: inherit;
-    transition: color 0.2s ease, transform 0.15s ease;
-    -webkit-user-drag: none;
-    user-select: none;
+    text-align: left;
+    white-space: nowrap;
+    transition: color 0.15s ease;
 
     &:hover {
         color: $color-dark-on-surface;
     }
-}
 
-button.footerLink {
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    font: inherit;
-}
-
-button.footerLink {
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    font: inherit;
-}
-
-button.footerLink {
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-
-    &:is(button) {
-        background: none;
-        border: none;
-        padding: 0;
-        cursor: pointer;
-        font: inherit;
-    }
-
-    &:active {
-        transform: scale(0.92);
+    @media (max-width: 768px) {
+        white-space: normal;
     }
 }
 
 .footerLinkIcon {
-    width: 24px;
-    height: 24px;
-    min-width: 24px;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    font-size: 20px;
     opacity: 0.9;
 }
 
@@ -147,11 +148,26 @@ button.footerLink {
 }
 
 .footerLinkIconSvgTelegram {
-    mask-image: url('@/images/telegram.svg');
-    -webkit-mask-image: url('@/images/telegram.svg');
+    mask-image: url("@/images/telegram.svg");
+    -webkit-mask-image: url("@/images/telegram.svg");
 }
 
 .footerLinkIconSvgMax {
-    mask-image: url('@/images/max.svg');
-    -webkit-mask-image: url('@/images/max.svg');
+    mask-image: url("@/images/max.svg");
+    -webkit-mask-image: url("@/images/max.svg");
+}
+
+.footerLinkIconSvgGithub {
+    mask-image: url("@/images/github.svg");
+    -webkit-mask-image: url("@/images/github.svg");
+}
+
+.footerLinkIconSvgGitea {
+    mask-image: url("@/images/gitea.svg");
+    -webkit-mask-image: url("@/images/gitea.svg");
+}
+
+.footerLinkIconSvgApple {
+    mask-image: url("@/images/mac.svg");
+    -webkit-mask-image: url("@/images/mac.svg");
 }

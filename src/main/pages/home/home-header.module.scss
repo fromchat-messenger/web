@@ -1,90 +1,153 @@
 @use "@/css/material" as *;
 @use "home-shared" as shared;
 
-.homepageHeader {
-    display: flex;
-    justify-content: center;
-    padding: 16px;
+.header {
     position: sticky;
     top: 0;
     z-index: 1000;
     user-select: none;
+    display: flex;
+    justify-content: center;
+    padding: 0 16px;
+    transition: padding 0.2s ease;
+}
+
+.headerScrolled {
+    padding: 16px;
+}
+
+.headerShell {
+    width: 100%;
+    max-width: 1120px;
+    transition:
+        background-color 0.2s ease,
+        backdrop-filter 0.2s ease,
+        border-radius 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.headerScrolled .headerShell {
+    background: rgba($color-dark-surface, 0.82);
+    backdrop-filter: blur(12px);
+    border-radius: 30px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
 }
 
 .headerInner {
-    max-width: 960px;
-    width: 100%;
-    padding: 16px 24px;
-    background: rgba($color-dark-surface, 0.8);
-    backdrop-filter: blur(10px);
-    border-radius: 30px;
-}
-
-.headerContent {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 16px;
+    padding: 12px 8px;
+    transition: padding 0.2s ease;
 }
 
-.logo {
+.headerScrolled .headerInner {
+    padding: 12px 24px;
+}
+
+.logoLink {
     display: flex;
     align-items: center;
     gap: 10px;
+    text-decoration: none;
+    flex-shrink: 0;
 }
 
 .logoIcon {
-    width: 40px;
-    height: 40px;
-    background-image: url('@/images/logo_square.svg');
+    width: 36px;
+    height: 36px;
+    background-image: url("@/images/logo_square.svg");
     background-size: cover;
     background-position: center;
-    background-repeat: no-repeat;
-    border-radius: 12px;
+    border-radius: 10px;
 }
 
-.logo h1 {
-    font-size: 32px;
-    font-weight: 700;
-    margin: 0;
-    @include shared.gradient-text;
-}
+.brandWordmark {
+    font-size: 1.375rem;
+    line-height: 1;
+    @include shared.brand-wordmark;
 
-.headerCenterLinks {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-
-    @media (max-width: 730px) {
+    @media (max-width: 480px) {
         display: none;
     }
-
-    a {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
 }
 
-.headerButton {
+.nav {
     display: flex;
     align-items: center;
+    gap: 4px;
+    flex: 1;
     justify-content: center;
+    min-width: 0;
+    overflow: hidden;
 }
 
-.headerDownloadButton {
-    display: block;
+.navLink {
+    appearance: none;
+    border: none;
+    background: none;
+    font: inherit;
+    color: $color-dark-on-surface-variant;
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 10px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &:hover {
+        color: $color-dark-on-surface;
+        background: rgba($color-dark-on-surface, 0.06);
+    }
 }
 
-.headerSmallButton {
-    display: none;
+.navLinkIcon {
+    font-size: 18px;
+    opacity: 0.92;
 }
 
-@media (max-width: 450px) {
-    .headerSmallButton {
-        display: block;
+.navLinkActive {
+    color: $color-dark-on-primary-container;
+    background: rgba($color-dark-primary-container, 0.35);
+
+    .navLinkIcon {
+        opacity: 1;
     }
 
-    .headerDownloadButton {
+    &:hover {
+        color: $color-dark-on-primary-container;
+        background: rgba($color-dark-primary-container, 0.42);
+    }
+}
+
+.navLink_support {
+    @media (max-width: 820px) {
+        display: none;
+    }
+}
+
+.navLink_web {
+    @media (max-width: 640px) {
+        display: none;
+    }
+}
+
+.headerActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+@media (max-width: 400px) {
+    .navLink_desktop {
         display: none;
     }
 }

@@ -1,11 +1,52 @@
 @use "@/css/material" as *;
 
-$gradient-rainbow: linear-gradient(45deg, #9333EA, #6366F1, #3B82F6, #A855F7, #D946EF, #EC4899, #7E22CE);
-$glow-purple: rgba(147, 51, 234, 0.5);
+$gradient-rainbow: linear-gradient(
+    45deg,
+    #9333EA,
+    #6366F1,
+    #3B82F6,
+    #A855F7,
+    #D946EF,
+    #EC4899,
+    #7E22CE
+);
 
-@mixin gradient-text {
+@mixin brand-wordmark {
+    font-family: "Montserrat", "Google Sans", sans-serif;
+    font-weight: 700;
     background: $gradient-rainbow;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 20px $glow-purple;
+}
+
+@mixin section-container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding-inline: clamp(20px, 4vw, 32px);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+@mixin marketing-headline {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 600;
+    line-height: 1.15;
+    color: $color-dark-on-background;
+    margin: 0;
+}
+
+@mixin marketing-body {
+    font-size: clamp(1rem, 2.2vw, 1.25rem);
+    line-height: 1.6;
+    color: $color-dark-on-surface-variant;
+    margin: 0;
+}
+
+@mixin marketing-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: $color-dark-primary;
+    margin: 0;
 }

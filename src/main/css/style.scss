@@ -3,6 +3,7 @@
 @use "material" as *;
 
 @use "fonts/montserrat";
+@use "fonts/google-sans";
 @use "fonts/material-symbols";
 
 
@@ -11,7 +12,7 @@
 }
 
 body {
-    font-family: 'Montserrat', sans-serif;
+    font-family: "Google Sans", system-ui, sans-serif;
     background-color: $color-dark-surface;
     color: $color-dark-on-surface;
     line-height: 1.6;
